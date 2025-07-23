@@ -1,6 +1,5 @@
 ### ✅ RemoteLogger Backend - `README.md`
 
-```md
 # RemoteLogger Backend
 
 **RemoteLogger** is an AI-enhanced platform for collecting logs, triggering alerts, and summarizing issues for developer teams. This repository contains the **Express.js API backend** for log ingestion, alerting, and AI summarization.
@@ -17,7 +16,7 @@
 git clone https://github.com/Stanwukong/remote-logger-backend.git
 cd remote-logger-backend
 npm install
-````
+```
 
 Create `.env`:
 
@@ -55,7 +54,5 @@ node index.js
 ## 👀 See Also
 
 * [RemoteLogger Frontend](https://github.com/Stanwukong/remote-logger)
-
-```
 
 
