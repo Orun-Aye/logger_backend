@@ -1,0 +1,1 @@
+{"root":["./src/server.ts","./src/controllers/log.controller.ts","./src/controllers/project.controller.ts","./src/handlers/logs.ts","./src/models/log.model.ts","./src/models/project.model.ts","./src/routes/log.routes.ts","./src/routes/project.routes.ts","./src/services/db.ts"],"errors":true,"version":"5.8.3"}
