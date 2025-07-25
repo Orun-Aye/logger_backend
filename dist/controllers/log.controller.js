@@ -9,46 +9,66 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createLog = void 0;
-const project_model_1 = require("../models/project.model");
-const log_model_1 = require("../models/log.model");
-const createLog = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { level, message, metadata } = req.body;
-        const apiKey = req.headers["x-api-key"];
-        // Validate log level
-        if (!Object.values(log_model_1.LogLevel).includes(level)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid log level",
-            });
-        }
-        // Check if project exists
-        const project = yield project_model_1.Project.findOne({ apiKey });
-        if (!project) {
-            return res.status(404).json({
-                success: false,
-                message: "Project not found",
-            });
-        }
-        const log = yield log_model_1.Log.create({
-            level,
-            message,
-            metadata,
-            project: project._id,
-        });
-        res.status(201).json({
-            success: true,
-            message: "Log created successfully",
-            data: log,
+exports.LogController = void 0;
+const log_service_1 = require("../services/log.service");
+/**
+ * Controller for handling log-related HTTP requests.
+ */
+class LogController {
+    /**
+     * POST /api/v1/logs
+     * Accepts single or batch log entries.
+     */
+    static ingestLogs(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const projectId = req.projectId; // Set by API key middleware
+            let logs = Array.isArray(req.body) ? req.body : [req.body];
+            try {
+                const count = yield log_service_1.LogService.ingestLogs(projectId, logs);
+                res.status(202).json({
+                    status: "success",
+                    message: "Logs accepted for processing.",
+                    receivedCount: count,
+                });
+            }
+            catch (err) {
+                console.error("Log ingestion error:", err);
+                res.status(500).json({
+                    status: "error",
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: "An unexpected error occurred on the server.",
+                });
+            }
         });
     }
-    catch (error) {
-        res.status(500).json({
-            success: false,
-            message: "Failed to log message",
-            error,
+    // Returns filtered logs for a project
+    static getLogs(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const projectId = req.projectId;
+            const { level, startDate, endDate, source, search } = req.query;
+            try {
+                const logs = yield log_service_1.LogService.queryLogs(projectId, {
+                    level: level,
+                    source: source,
+                    startDate: startDate ? new Date(startDate) : undefined,
+                    endDate: endDate ? new Date(endDate) : undefined,
+                    search: search,
+                });
+                res.status(200).json({
+                    status: "success",
+                    data: logs,
+                    count: logs.length,
+                });
+            }
+            catch (error) {
+                console.error("Error querying logs:", error);
+                res.status(500).json({
+                    status: "error",
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: "Failed to retrieve logs.",
+                });
+            }
         });
     }
-});
-exports.createLog = createLog;
+}
+exports.LogController = LogController;

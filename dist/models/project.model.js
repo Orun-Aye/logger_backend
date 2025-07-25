@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Project = void 0;
+exports.ProjectModel = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const ProjectSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
@@ -42,5 +42,4 @@ const ProjectSchema = new mongoose_1.Schema({
 }, {
     timestamps: true,
 });
-ProjectSchema.index({ apiKey: 1 });
-exports.Project = mongoose_1.default.model("Project", ProjectSchema);
+exports.ProjectModel = mongoose_1.default.model("Project", ProjectSchema);

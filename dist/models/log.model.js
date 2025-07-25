@@ -33,25 +33,19 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Log = exports.LogLevel = void 0;
+exports.LogModel = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-var LogLevel;
-(function (LogLevel) {
-    LogLevel["INFO"] = "info";
-    LogLevel["WARN"] = "warn";
-    LogLevel["ERROR"] = "error";
-})(LogLevel || (exports.LogLevel = LogLevel = {}));
 const LogSchema = new mongoose_1.Schema({
-    level: { type: String, enum: Object.values(LogLevel), required: true },
+    level: { type: String, enum: ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'], required: true },
     message: { type: String, required: true },
     projectId: {
         type: mongoose_1.default.Schema.Types.ObjectId,
         ref: "Project",
         required: true,
     },
+    source: { type: String, required: true },
     metadata: { type: mongoose_1.Schema.Types.Mixed, default: {} },
 }, {
     timestamps: true,
 });
-LogSchema.index({ project: 1, level: 1, createdAt: -1 });
-exports.Log = mongoose_1.default.model("Log", LogSchema);
+exports.LogModel = mongoose_1.default.model("Log", LogSchema);

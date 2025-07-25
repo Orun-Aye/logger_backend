@@ -10,12 +10,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createProject = void 0;
-const project_model_1 = require("../models/project.model");
 const nanoid_1 = require("nanoid");
+const project_model_1 = require("../models/project.model");
 const createProject = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name, description } = req.body;
-        const project = yield project_model_1.Project.create({
+        const project = yield project_model_1.ProjectModel.create({
             name,
             apiKey: (0, nanoid_1.nanoid)(32),
             description,

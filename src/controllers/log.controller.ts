@@ -1,81 +1,65 @@
-import { Request, Response } from "express";
-import { Project } from "../models/project.model";
-import { Log, LogLevel } from "../models/log.model";
-import { CreateLogDto } from "../dtos/CreateLog.dto";
+import {  Response, Request } from "express-serve-static-core";
+import { LogService } from "../services/log.service";
+import { LogDTO } from "../dtos/log.dto";
 
+/**
+ * Controller for handling log-related HTTP requests.
+ */
+export class LogController {
+  /**
+   * POST /api/v1/logs
+   * Accepts single or batch log entries.
+   */
+  static async ingestLogs(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    const projectId = res.locals.projectId; // Set by API key middleware
+    let logs: LogDTO[] = Array.isArray(req.body) ? req.body : [req.body];
 
-export const createLog = async (req: Request, res: Response) => {
-  try {
-    const { level, message, metadata } = req.body;
-    const apiKey = req.headers["x-api-key"] as string;
-
-    // Validate log level
-    if (!Object.values(LogLevel).includes(level)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid log level",
+    try {
+      const count = await LogService.ingestLogs(projectId, logs);
+      res.status(202).json({
+        status: "success",
+        message: "Logs accepted for processing.",
+        receivedCount: count,
+      });
+    } catch (err) {
+      console.error("Log ingestion error:", err);
+      res.status(500).json({
+        status: "error",
+        code: "INTERNAL_SERVER_ERROR",
+        message: "An unexpected error occurred on the server.",
       });
     }
-
-    // Check if project exists
-    const project = await Project.findOne({ apiKey });
-
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: "Project not found",
-      });
-    }
-
-    const log = await Log.create({
-      level,
-      message,
-      metadata,
-      project: project._id,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Log created successfully",
-      data: log,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to log message",
-      error,
-    });
   }
-};
 
-export const getLogs = async (req: Request, res: Response) => {
-  try {
-    const apiKey = req.headers["x-api-key"] as string;
+  // Returns filtered logs for a project
+  static async getLogs(req: Request, res: Response): Promise<void> {
+    const projectId = res.locals.projectId;
+    const { level, startDate, endDate, source, search } = req.query;
 
-    // Check if project exists
-    const project = await Project.findOne({ apiKey });
+    try {
+      const logs = await LogService.queryLogs(projectId, {
+        level: level as string,
+        source: source as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        search: search as string,
+      });
 
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: "Project not found",
+      res.status(200).json({
+        status: "success",
+        data: logs,
+        count: logs.length,
+      });
+    } catch (error) {
+      console.error("Error querying logs:", error);
+      res.status(500).json({
+        status: "error",
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to retrieve logs.",
       });
     }
-
-    const logs = await Log.find({ project: project._id }).sort({
-      createdAt: -1,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Logs retrieved successfully",
-      data: logs,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to retrieve logs",
-      error,
-    });
   }
-};
+}

@@ -1,25 +1,18 @@
 import mongoose, { Document, Schema } from "mongoose";
-import { IProject } from "./project.model";
 
-export enum LogLevel {
-  INFO = "info",
-  WARN = "warn",
-  ERROR = "error",
-  DEBUG = "debug",
-}
 
 export interface ILog extends Document {
-  level: LogLevel;
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
   message: string;
-  projectId: mongoose.Types.ObjectId | IProject;
+  projectId: mongoose.Types.ObjectId;
+  source: string;
   metadata?: Record<string, any>;
-  createdAt: Date;
-  updatedAt: Date;
+  timestamp: Date
 }
 
 const LogSchema: Schema<ILog> = new Schema(
   {
-    level: { type: String, enum: Object.values(LogLevel), required: true },
+    level: { type: String, enum: ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'], required: true },
     message: { type: String, required: true },
     
     projectId: {
@@ -27,6 +20,7 @@ const LogSchema: Schema<ILog> = new Schema(
       ref: "Project",
       required: true,
     },
+    source: { type: String, required: true },
     metadata: { type: Schema.Types.Mixed, default: {} },
   },
   {
@@ -34,6 +28,5 @@ const LogSchema: Schema<ILog> = new Schema(
   }
 );
 
-LogSchema.index({ project: 1, level: 1, createdAt: -1 });
 
-export const Log = mongoose.model<ILog>("Log", LogSchema);
+export const LogModel = mongoose.model<ILog>("Log", LogSchema);
