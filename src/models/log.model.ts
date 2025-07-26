@@ -1,32 +1,72 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
 
 export interface ILog extends Document {
-  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+  projectId: string;
+  timestamp: string;
+  level: string;
   message: string;
-  projectId: mongoose.Types.ObjectId;
-  source: string;
-  metadata?: Record<string, any>;
-  timestamp: Date
+  data?: Record<string, any>;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+  service?: string;
+  environment?: string;
+  context?: Record<string, any>;
+  metadata?: any;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const LogSchema: Schema<ILog> = new Schema(
+const LogSchema: Schema = new Schema<ILog>(
   {
-    level: { type: String, enum: ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'], required: true },
-    message: { type: String, required: true },
-    
     projectId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
+      type: String,
+      required: true,
+      index: true,
+    },
+    timestamp: {
+      type: String, // ISO 8601 string
+      required: true,
+      default: () => new Date().toISOString(),
+    },
+    level: {
+      type: String,
+      required: true,
+      enum: ["trace", "debug", "info", "warn", "error", "fatal"],
+    },
+    message: {
+      type: String,
       required: true,
     },
-    source: { type: String, required: true },
-    metadata: { type: Schema.Types.Mixed, default: {} },
+    data: {
+      type: Schema.Types.Mixed,
+    },
+    error: {
+      name: String,
+      message: String,
+      stack: String,
+    },
+    service: {
+      type: String,
+      default: "unknown-service",
+    },
+    environment: {
+      type: String,
+      default: "development",
+    },
+    context: {
+      type: Schema.Types.Mixed,
+    },
+    metadata: {
+      type: Schema.Types.Mixed,
+    },
   },
   {
-    timestamps: true,
+    timestamps: true, // adds createdAt and updatedAt
   }
 );
-
 
 export const LogModel = mongoose.model<ILog>("Log", LogSchema);

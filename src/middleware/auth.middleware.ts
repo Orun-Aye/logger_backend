@@ -3,6 +3,33 @@
 
 import { NextFunction, Request, Response } from "express";
 import { ProjectModel } from "../models/project.model";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+
+export async function verifyToken(req: Request, res: Response, next: NextFunction) {
+    const token = req.headers.authorization;
+    if (!token) {
+        return res.status(401).json({
+            status: 'error',
+            code: 'UNAUTHORIZED',
+            message: 'No token provided'
+        });
+    }
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.userId = decoded.userId
+    } catch (error) {
+        return res.status(401).json({
+            status: 'error',
+            code: 'INVALID_TOKEN',
+            message: 'Invalid or expired token'
+        });
+    }
+    next();
+}
 
 
 export async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {

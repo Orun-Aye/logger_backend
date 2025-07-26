@@ -4,7 +4,10 @@ import { authenticateApiKey } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Accepts a log event tied to a project via API key
-router.post('/logs', authenticateApiKey, LogController.ingestLogs);
+router.use(authenticateApiKey);
+
+router.post('/:projectId/logs', LogController.createLog);
+router.get('/:projectId/logs', LogController.getAllLogs);
+router.get('/:projectId/logs/:logId', LogController.getLogById);
 
 export default router;

@@ -4,6 +4,7 @@ import mongoose, { Document, Schema} from "mongoose";
 export interface IUser extends Document {
     email: string
     name: string;
+    password: string; // Optional for OAuth users
     role: "developer" | "admin";
     joinedAt?: Date
 
@@ -17,6 +18,7 @@ export interface IUser extends Document {
 const UserSchema: Schema<IUser> = new Schema({
     email: { type: String, required: true, unique: true, sparse: true },
     name: { type: String, required: true },
+    password: { type: String, required: true },
     role: { type: String, enum: ["developer", "admin"], default: "developer" },
     joinedAt: { type: Date, default: Date.now },
 

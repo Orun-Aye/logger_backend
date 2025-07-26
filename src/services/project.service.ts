@@ -57,6 +57,7 @@ export class ProjectService {
       const project = new ProjectModel({
         ...data,
         name: data.name.trim(),
+        ownerId: data.ownerId, 
         apiKey,
         createdAt: new Date(),
         updatedAt: new Date(),

@@ -1,9 +1,10 @@
 import express, { NextFunction, Request, Response } from "express";
 import dotenv from "dotenv";
-import { connectDB } from "./services/db";
+import { connectDB } from "./utils/db";
 import projectRoutes from "./routes/project.routes";
 import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
+import userRoutes from "./routes/user.routes";
 
 dotenv.config();
 
@@ -12,14 +13,11 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
+app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
-app.use("/api/v1/logs", logRoutes);
-app.use('/api/v1/alert-rules', alertRuleRoutes);
+app.use("/api/v1/", logRoutes);
+app.use('/api/v1/alerts', alertRuleRoutes);
 
-// Sample route
-app.get("/api/health", (req: Request, res: Response, next: NextFunction) => {
-  res.status(200).json({ status: "RemoteLogger API is running 🎯" });
-});
 
 // Start the server
 const startServer = async () => {

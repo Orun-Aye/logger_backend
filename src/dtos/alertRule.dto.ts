@@ -1,16 +1,30 @@
+import { Types } from "mongoose";
+
 /**
  * DTO for creating/updating alert rules.
  */
-export interface AlertRuleDTO {
+export interface CreateAlertRuleDTO {
   name: string;
+  projectId:  Types.ObjectId;
   condition: {
-    field: string; // e.g. "level"
-    operator: "equals" | "contains";
-    value: string;
-  };
-  threshold: {
-    count: number;
-    durationMinutes: number;
+    level: string; // e.g. "level"
+    threshold: number;
+    timeWindowMinutes: number;
   };
   isActive?: boolean;
+  notifyVia?: string[];
+  notificationConfig?: object;
+}
+
+export interface UpdateAlertRuleDTO {
+  name?: string;
+  projectId: Types.ObjectId
+  condition?: {
+    level: string;
+    threshold: number;
+    timeWindowMinutes: number;
+  };
+  isActive?: boolean;
+  notifyVia?: string[];
+  notificationConfig?: object;
 }

@@ -6,8 +6,9 @@ const router = Router();
 
 router.use(authenticateApiKey);
 
-router.get("/", AlertRuleController.list);
 router.post("/", AlertRuleController.create);
+router.get("/", AlertRuleController.getRuleByProject);
+router.get("/:id", AlertRuleController.getRuleById);
 router.put("/:id", AlertRuleController.update);
 router.delete("/:id", AlertRuleController.delete);
 

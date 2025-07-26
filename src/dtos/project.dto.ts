@@ -1,6 +1,7 @@
 export interface CreateProjectDTO {
     name: string;
     description?: string;
+    ownerId: string; 
 }
 
 export interface UpdateProjectDTO {

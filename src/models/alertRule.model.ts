@@ -1,21 +1,38 @@
-import { Schema, model, Types } from "mongoose";
+import { Schema, model, Types, Document } from "mongoose";
 
-const AlertRuleSchema = new Schema(
+export interface IAlertRules extends Document {
+  projectId: Types.ObjectId;
+  name: string;
+  condition: any;
+  isActive: boolean;
+  notifyVia: any;
+  notificationConfig: any;
+  createdAt?: Date
+}
+
+const AlertRuleSchema: Schema<IAlertRules> = new Schema(
   {
-    projectId: { type: Types.ObjectId, ref: "Project", required: true },
+    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true },
     name: { type: String, required: true },
     condition: {
-      field: { type: String, required: true },  // e.g., "level"
-      operator: { type: String, enum: ["equals", "contains"], required: true },
-      value: { type: String, required: true },
-    },
-    threshold: {
-      count: { type: Number, required: true },
-      durationMinutes: { type: Number, required: true },
+      type: Object,
+      required: true,
     },
     isActive: { type: Boolean, default: true },
+    notifyVia: {
+      type: [String],
+      enum: ["email", "slack", "webhook"],
+      default: ["email"],
+    },
+    notificationConfig: {
+      type: Object,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
   },
   { timestamps: true }
 );
 
-export const AlertRuleModel = model("AlertRule", AlertRuleSchema);
+export const AlertRuleModel = model<IAlertRules>("AlertRule", AlertRuleSchema);
