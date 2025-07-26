@@ -1,4 +1,3 @@
-import { log } from "console";
 import { CreateLogDTO, FilterLogsDTO } from "../dtos/log.dto";
 import { LogModel } from "../models/log.model";
 import { Types, SortOrder } from "mongoose";

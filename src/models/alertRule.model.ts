@@ -5,9 +5,9 @@ export interface IAlertRules extends Document {
   name: string;
   condition: any;
   isActive: boolean;
-  notifyVia: any;
+  notifyChannels: any;
   notificationConfig: any;
-  createdAt?: Date
+  createdAt?: Date;
 }
 
 const AlertRuleSchema: Schema<IAlertRules> = new Schema(
@@ -15,11 +15,16 @@ const AlertRuleSchema: Schema<IAlertRules> = new Schema(
     projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true },
     name: { type: String, required: true },
     condition: {
-      type: Object,
-      required: true,
+      level: {
+        type: String,
+        enum: ["trace", "debug", "info", "warn", "error", "fatal"],
+      },
+      keyword: { type: String },
+      frequency: { type: Number },
+      intervalMinutes: { type: Number, default: 10 },
     },
     isActive: { type: Boolean, default: true },
-    notifyVia: {
+    notifyChannels: {
       type: [String],
       enum: ["email", "slack", "webhook"],
       default: ["email"],
@@ -29,7 +34,7 @@ const AlertRuleSchema: Schema<IAlertRules> = new Schema(
     },
     createdAt: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
   },
   { timestamps: true }

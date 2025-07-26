@@ -4,47 +4,48 @@ import { verifyToken } from "../middleware/auth.middleware";
 
 const router = Router();
 
+router.use(verifyToken);
 
 // Create a new project
-router.post("/", verifyToken, ProjectController.create);
+router.post("/", ProjectController.create);
 
 // Check Service Health
-router.get("/health", verifyToken, ProjectController.healthCheck);
+router.get("/health", ProjectController.healthCheck);
 
 // Get all projects
-router.get("/", verifyToken, ProjectController.getAll);
+router.get("/", ProjectController.getAll);
 
 // Get a specific project by ID
-router.get("/:id", verifyToken, ProjectController.getById);
+router.get("/:id", ProjectController.getById);
 
 // Get a project by API key
 router.get(
   "/by-api-key/:apiKey",
-  verifyToken,
+
   ProjectController.getProjectByApiKey
 );
 
 // Update a project by ID
-router.put("/:id", verifyToken, ProjectController.updateById);
+router.put("/:id", ProjectController.updateById);
 
 // Delete a project by ID
-router.delete("/:id", verifyToken, ProjectController.delete);
+router.delete("/:id", ProjectController.delete);
 
 // Bulk Delete projects
-router.delete("/", verifyToken, ProjectController.bulkDelete);
+router.delete("/", ProjectController.bulkDelete);
 
 // // Get project usage statistics (log count, alert rules)
-router.get("/:id/stats", verifyToken, ProjectController.getProjectStats);
+router.get("/:id/stats", ProjectController.getProjectStats);
 
 // Regenerate API key for a project
 router.post(
   "/:id/regenerate-api-key",
-  verifyToken,
+
   ProjectController.regenerateApiKey
 );
 
 // Search projects
-router.get("/search", verifyToken, ProjectController.searchProjects);
+router.get("/search", ProjectController.searchProjects);
 
 // // Activate a project by ID
 // router.post("/:id/activate", activateProjectById);

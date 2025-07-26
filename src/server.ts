@@ -5,6 +5,7 @@ import projectRoutes from "./routes/project.routes";
 import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
+import insightRoutes from "./routes/insights.routes"
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/", logRoutes);
 app.use('/api/v1/alerts', alertRuleRoutes);
+app.use('/api/v1/dashboard/', insightRoutes);
 
 
 // Start the server
