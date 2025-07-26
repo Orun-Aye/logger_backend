@@ -76,7 +76,7 @@ export class UserService {
        if (!secret) {
         throw new Error("JWT secret is not defined in environment variables");
       }
-      const token = jwt.sign({ userId: savedUser._id }, secret, { expiresIn: "1h" });
+      const token = jwt.sign({ userId: savedUser._id }, secret, { expiresIn: "10h" });
 
       
 
@@ -116,7 +116,7 @@ export class UserService {
       if (!secret) {
         throw new Error("JWT secret is not defined in environment variables");
       }
-      const token = jwt.sign({userId: user._id}, secret, { expiresIn: "1h" });
+      const token = jwt.sign({userId: user._id}, secret, { expiresIn: "10h" });
 
       // Here you would typically check the password, but for simplicity, we assume password is not used
       return {
