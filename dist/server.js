@@ -14,19 +14,21 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const db_1 = require("./services/db");
+const db_1 = require("./utils/db");
 const project_routes_1 = __importDefault(require("./routes/project.routes"));
 const log_routes_1 = __importDefault(require("./routes/log.routes"));
+const alertRule_routes_1 = __importDefault(require("./routes/alertRule.routes"));
+const user_routes_1 = __importDefault(require("./routes/user.routes"));
+const insights_routes_1 = __importDefault(require("./routes/insights.routes"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 app.use(express_1.default.json());
-app.use("/api/projects", project_routes_1.default);
-app.use("/api/logs", log_routes_1.default);
-// Sample route
-app.get("/api/health", (req, res, next) => {
-    res.status(200).json({ status: "RemoteLogger API is running 🎯" });
-});
+app.use("/api/v1", user_routes_1.default);
+app.use("/api/v1/projects", project_routes_1.default);
+app.use("/api/v1/", log_routes_1.default);
+app.use('/api/v1/alerts', alertRule_routes_1.default);
+app.use('/api/v1/dashboard/', insights_routes_1.default);
 // Start the server
 const startServer = () => __awaiter(void 0, void 0, void 0, function* () {
     yield (0, db_1.connectDB)(process.env.MONGODB_URI);

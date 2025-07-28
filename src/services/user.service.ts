@@ -27,8 +27,13 @@ export class UserService {
     if (!data.email || typeof data.email !== "string") {
       throw new UserValidationError("Invalid email format");
     }
-    if (!data.name || typeof data.name !== "string") {
-      throw new UserValidationError("Name is required");
+    if (
+      !data.firstName ||
+      !data.lastName ||
+      typeof data.firstName !== "string" ||
+      typeof data.lastName !== "string"
+    ) {
+      throw new UserValidationError("Both first and last name are required");
     }
     if (data.role && !["developer", "admin"].includes(data.role)) {
       throw new UserValidationError("Invalid role specified");
@@ -61,29 +66,28 @@ export class UserService {
         throw new UserValidationError("User with this email already exists");
       }
 
-
-     
-
       // Create a new user
       const newUser = new UserModel({
         email: data.email,
-        name: data.name,
+        firstName: data.firstName,
+        lastName: data.lastName,
         password: hashedPassword, // Use the hashed password
         role: data.role || "developer",
       });
       const savedUser = await newUser.save();
 
-       if (!secret) {
+      if (!secret) {
         throw new Error("JWT secret is not defined in environment variables");
       }
-      const token = jwt.sign({ userId: savedUser._id }, secret, { expiresIn: "10h" });
-
-      
+      const token = jwt.sign({ userId: savedUser._id }, secret, {
+        expiresIn: "10h",
+      });
 
       return {
         _id: savedUser._id,
         email: savedUser.email,
-        name: savedUser.name,
+        firstName: savedUser.firstName,
+        lastName: savedUser.lastName,
         role: savedUser.role,
         token,
         joinedAt: savedUser.joinedAt,
@@ -107,22 +111,27 @@ export class UserService {
       if (!user) {
         throw new UserNotFoundError();
       }
-      const isPasswordValid = await bcrypt.compare(data.password, user.password);
+      const isPasswordValid = await bcrypt.compare(
+        data.password,
+        user.password
+      );
       if (!isPasswordValid) {
         throw new UserValidationError("Invalid email or password");
       }
 
-      
       if (!secret) {
         throw new Error("JWT secret is not defined in environment variables");
       }
-      const token = jwt.sign({userId: user._id}, secret, { expiresIn: "10h" });
+      const token = jwt.sign({ userId: user._id }, secret, {
+        expiresIn: "10h",
+      });
 
       // Here you would typically check the password, but for simplicity, we assume password is not used
       return {
         _id: user._id,
         email: user.email,
-        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
         token,
         joinedAt: user.joinedAt,

@@ -4,7 +4,6 @@ import { verifyToken } from "../middleware/auth.middleware";
 
 const router = Router();
 
-router.use(verifyToken);
 
 // Create a new project
 router.post("/", ProjectController.create);

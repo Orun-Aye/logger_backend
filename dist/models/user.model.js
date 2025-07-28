@@ -33,51 +33,22 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LogModel = void 0;
+exports.UserModel = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const LogSchema = new mongoose_1.Schema({
-    projectId: {
-        type: String,
-        required: true,
-        index: true,
-    },
-    timestamp: {
-        type: String, // ISO 8601 string
-        required: true,
-        default: () => new Date().toISOString(),
-    },
-    level: {
-        type: String,
-        required: true,
-        enum: ["trace", "debug", "info", "warn", "error", "fatal"],
-    },
-    message: {
-        type: String,
-        required: true,
-    },
-    data: {
-        type: mongoose_1.Schema.Types.Mixed,
-    },
-    error: {
-        name: String,
-        message: String,
-        stack: String,
-    },
-    service: {
-        type: String,
-        default: "unknown-service",
-    },
-    environment: {
-        type: String,
-        default: "development",
-    },
-    context: {
-        type: mongoose_1.Schema.Types.Mixed,
-    },
-    metadata: {
-        type: mongoose_1.Schema.Types.Mixed,
-    },
+const UserSchema = new mongoose_1.Schema({
+    email: { type: String, required: true, unique: true, sparse: true },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    password: { type: String, required: true },
+    role: { type: String, enum: ["developer", "admin"], default: "developer" },
+    joinedAt: { type: Date, default: Date.now },
+    oauthProvider: { type: String },
+    oauthId: { type: String, unique: true, sparse: true },
+    avatarUrl: { type: String },
+    accessToken: { type: String },
+    refreshToken: { type: String }
 }, {
-    timestamps: true, // adds createdAt and updatedAt
+    timestamps: true,
 });
-exports.LogModel = mongoose_1.default.model("Log", LogSchema);
+UserSchema.index({ oauthId: 1, oauthProvider: 1 }, { unique: true, sparse: true });
+exports.UserModel = mongoose_1.default.model("User", UserSchema);

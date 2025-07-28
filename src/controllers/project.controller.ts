@@ -126,6 +126,16 @@ export class ProjectController {
     }
   }
 
+  static async getByUser(req: Request, res: Response): Promise<Response> {
+    try {
+      const paginationParams = ProjectController.validatePaginationParams(req);
+      const { id } = req.params
+      const result = await ProjectService.getProjectsByUser(id, paginationParams)
+    } catch (error) {
+      
+    }
+  } 
+
   static async getById(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;

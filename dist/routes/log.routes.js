@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const log_controller_1 = require("../controllers/log.controller");
-const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
-// Accepts a log event tied to a project via API key
-router.post('/logs', auth_middleware_1.authenticateApiKey, log_controller_1.LogController.ingestLogs);
+router.post('/:projectId/logs', log_controller_1.LogController.createLog);
+router.get('/:projectId/logs', log_controller_1.LogController.getAllLogs);
+router.get('/:projectId/logs/:logId', log_controller_1.LogController.getLogById);
 exports.default = router;

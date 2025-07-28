@@ -1,3 +1,3 @@
 "use strict";
-// src/dtos/log.dto.ts
+// Types and Interfaces
 Object.defineProperty(exports, "__esModule", { value: true });

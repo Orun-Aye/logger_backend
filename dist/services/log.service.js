@@ -9,46 +9,143 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LogService = void 0;
+exports.LogService = exports.LogServiceError = exports.LogNotFoundError = exports.LogLevel = void 0;
 const log_model_1 = require("../models/log.model");
+const mongoose_1 = require("mongoose");
+var LogLevel;
+(function (LogLevel) {
+    LogLevel["TRACE"] = "trace";
+    LogLevel["DEBUG"] = "debug";
+    LogLevel["INFO"] = "info";
+    LogLevel["WARN"] = "warn";
+    LogLevel["ERROR"] = "error";
+    LogLevel["FATAL"] = "fatal";
+})(LogLevel || (exports.LogLevel = LogLevel = {}));
+class LogNotFoundError extends Error {
+    constructor(id) {
+        super(`Log with ID ${id} not found`);
+        this.name = "LogNotFoundError";
+    }
+}
+exports.LogNotFoundError = LogNotFoundError;
+class LogServiceError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "LogServiceError";
+    }
+}
+exports.LogServiceError = LogServiceError;
 class LogService {
-    static ingestLogs(projectId, logs) {
+    static createLog(data) {
         return __awaiter(this, void 0, void 0, function* () {
-            const documents = logs.map((log) => ({
-                timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
-                level: log.level,
-                message: log.message,
-                source: log.source,
-                metadata: log.metadata || {},
-                projectId,
-            }));
-            const result = yield log_model_1.LogModel.insertMany(documents);
-            return result.length;
+            try {
+                const existingLog = yield log_model_1.LogModel.findOne({
+                    projectId: data.projectId,
+                    message: data.message,
+                    timestamp: data.timestamp,
+                });
+                if (existingLog) {
+                    throw new LogServiceError("Log already exists with the same message and timestamp.");
+                }
+                const newLog = yield log_model_1.LogModel.create(Object.assign(Object.assign({}, data), { timestamp: data.timestamp || new Date() }));
+                return newLog;
+            }
+            catch (error) {
+                if (error instanceof LogNotFoundError ||
+                    error instanceof LogServiceError) {
+                    throw error;
+                }
+                throw new Error(`Failed to record log: ${error}`);
+            }
         });
     }
-    // Query logs with filters.
-    static queryLogs(projectId, filters) {
+    static getAllLogs(filters) {
         return __awaiter(this, void 0, void 0, function* () {
-            const query = { projectId };
-            if (filters.level) {
-                query.level = filters.level;
+            try {
+                const { level, service, environment, search, startDate, endDate, page = 1, limit = 50, sortBy = "timestamp", sortOrder = "desc", } = filters;
+                const query = {};
+                if (level)
+                    query.level = level;
+                if (service)
+                    query.service = service;
+                if (environment)
+                    query.environment = environment;
+                if (search)
+                    query.message = { $regex: search, $options: "i" };
+                if (startDate || endDate) {
+                    query.timestamp = {};
+                    if (startDate)
+                        query.timestamp.$gte = new Date(startDate);
+                    if (endDate)
+                        query.timestamp.$lte = new Date(endDate);
+                }
+                const skip = (page - 1) * limit;
+                const sort = {
+                    [sortBy]: sortOrder === "asc" ? 1 : -1,
+                };
+                const [logs, total] = yield Promise.all([
+                    log_model_1.LogModel.find(query)
+                        .select("-__v")
+                        .sort(sort)
+                        .skip(skip)
+                        .limit(limit)
+                        .lean(),
+                    log_model_1.LogModel.countDocuments(),
+                ]);
+                return {
+                    logs,
+                    pagination: {
+                        total: Math.ceil(total / limit),
+                        current: page,
+                        count: logs.length,
+                        order: sortOrder,
+                        totalRecords: total,
+                    },
+                };
             }
-            if (filters.source) {
-                query.source = filters.source;
+            catch (error) {
+                throw new LogServiceError(`Failed to fetch logs: ${error}`);
             }
-            if (filters.startDate) {
-                query.timestamp = Object.assign(Object.assign({}, query.timestamp), { $gte: filters.startDate });
+        });
+    }
+    static getLogById(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                if (!mongoose_1.Types.ObjectId.isValid(id))
+                    return null;
+                const log = yield log_model_1.LogModel.findById(id).select("-__v").lean();
+                if (!log) {
+                    throw new LogNotFoundError(id);
+                }
+                return log;
             }
-            if (filters.endDate) {
-                query.timestamp = Object.assign(Object.assign({}, query.timestamp), { $lte: filters.endDate });
+            catch (error) {
+                if (error instanceof LogNotFoundError ||
+                    error instanceof LogServiceError) {
+                    throw error;
+                }
+                throw new Error(`Failed to fetch log: ${error}`);
             }
-            if (filters.search) {
-                query.$or = [
-                    { message: { $regex: filters.search, $options: 'i' } },
-                    { 'metadata': { $regex: filters.search, $options: 'i' } }
-                ];
-            }
-            return log_model_1.LogModel.find(query).sort({ timestamp: -1 }).limit(200);
+        });
+    }
+    getSummary() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const totalLogs = yield log_model_1.LogModel.countDocuments();
+            const byLevel = yield log_model_1.LogModel.aggregate([
+                { $group: { _id: "$level", count: { $sum: 1 } } },
+            ]);
+            const byService = yield log_model_1.LogModel.aggregate([
+                { $group: { _id: "$service", count: { $sum: 1 } } },
+            ]);
+            const byEnvironment = yield log_model_1.LogModel.aggregate([
+                { $group: { _id: "$environment", count: { $sum: 1 } } },
+            ]);
+            return {
+                totalLogs,
+                byLevel: Object.fromEntries(byLevel.map((l) => [l._id, l.count])),
+                byService: Object.fromEntries(byService.map((s) => [s._id, s.count])),
+                byEnvironment: Object.fromEntries(byEnvironment.map((e) => [e._id, e.count])),
+            };
         });
     }
 }

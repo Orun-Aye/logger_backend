@@ -57,7 +57,8 @@ export class ProjectService {
       const project = new ProjectModel({
         ...data,
         name: data.name.trim(),
-        ownerId: data.ownerId, 
+        ownerId: data.ownerId,
+        teamMembers: [{ user: data.ownerId, role: "admin" }],
         apiKey,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -122,6 +123,73 @@ export class ProjectService {
           order: sortOrder,
           totalRecords: total,
         },
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch projects: ${error}`);
+    }
+  }
+
+  static async getProjectsByUser(
+    userId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      sortOrder?: "asc" | "desc";
+      searchBy?: 'owner' | 'teamMember' | 'both'
+    } = {}
+  ) {
+    try {
+      const {
+        page = 1,
+        limit = 10,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+        searchBy = 'owner'
+      } = options;
+
+      const skip = (page - 1) * limit;
+      const sort: { [key: string]: SortOrder } = {
+        [sortBy]: sortOrder === "desc" ? -1 : 1,
+      };
+
+      this.validateObjectId(userId);
+      const userObjectId = new Types.ObjectId(userId);
+
+      let queryCondition: Record<string, any>
+
+      if (searchBy === 'owner') {
+        queryCondition = { ownerId: userObjectId };
+      } else if (searchBy === 'teamMember') {
+        queryCondition = { 'teamMembers.user': userObjectId };
+      } else { // 'both'
+        queryCondition = {
+          $or: [
+            { ownerId: userObjectId },
+            { 'teamMembers.user': userObjectId },
+          ],
+        };
+      }
+
+      const [projects, total] = await Promise.all([
+        ProjectModel.find(queryCondition)
+          .select("-__v")
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+          ProjectModel.countDocuments(queryCondition)
+      ]);
+
+      return {
+        projects,
+        pagination: {
+          current: page,
+          total: Math.ceil(total / limit),
+          count: projects.length,
+          order: sortOrder,
+          totalRecords: total
+        }
       };
     } catch (error) {
       throw new Error(`Failed to fetch projects: ${error}`);
@@ -363,9 +431,9 @@ export class ProjectService {
       this.validateObjectId(userId);
 
       const project = await ProjectModel.findById(projectId);
-      if (!project) { 
+      if (!project) {
         throw new ProjectNotFoundError(projectId);
-      } 
+      }
 
       // Check if user is already a team member
       const existingMember = project.teamMembers.find(
@@ -396,7 +464,7 @@ export class ProjectService {
         throw error;
       }
       throw new Error(`Failed to add team member: ${error}`);
-    } 
+    }
   }
 
   static async removeTeamMember(projectId: string, userId: string) {
@@ -414,7 +482,9 @@ export class ProjectService {
       );
 
       if (memberIndex === -1) {
-        throw new ProjectValidationError("User is not a team member of this project");
+        throw new ProjectValidationError(
+          "User is not a team member of this project"
+        );
       }
 
       project.teamMembers.splice(memberIndex, 1);
@@ -454,7 +524,9 @@ export class ProjectService {
       );
 
       if (!member) {
-        throw new ProjectValidationError("User is not a team member of this project");
+        throw new ProjectValidationError(
+          "User is not a team member of this project"
+        );
       }
 
       member.role = role;
@@ -478,4 +550,3 @@ export class ProjectService {
     }
   }
 }
-

@@ -1,6 +1,7 @@
 export interface CreateUserDTO {
     email: string;
-    name: string;
+    firstName: string;
+    lastName: string;
     password: string; // Required for signup
     role: "developer" | "admin"; // Default to "developer"
     oauthProvider?: string;

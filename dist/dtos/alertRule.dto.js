@@ -1,3 +1,2 @@
 "use strict";
-// src/dtos/log.dto.ts
 Object.defineProperty(exports, "__esModule", { value: true });
