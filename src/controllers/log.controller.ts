@@ -2,13 +2,11 @@
 
 import { Request, Response } from "express";
 import {
-  LogLevel,
   LogNotFoundError,
   LogService,
   LogServiceError,
-  LogSortByField,
 } from "../services/log.service";
-import { FilterLogsDTO } from "../dtos/log.dto";
+import { FilterLogsDTO, LogLevel, LogSortByField } from "../dtos/log.dto";
 import { SortOrder } from "mongoose";
 
 interface ApiResponse<T = any> {

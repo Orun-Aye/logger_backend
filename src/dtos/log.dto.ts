@@ -1,39 +1,116 @@
 // src/dtos/log.dto.ts
 
-import { LogSortByField } from "../services/log.service";
+
+// Defining DTOs and Enums here for completeness and clarity,
+// assuming they are also defined in a separate log.dto.ts file.
+// If they are strictly in log.dto.ts, these can be removed from here.
+
+export enum LogLevel {
+  TRACE = "trace",
+  DEBUG = "debug",
+  INFO = "info",
+  WARN = "warn",
+  ERROR = "error",
+  FATAL = "fatal",
+}
 
 /**
  * @description DTO for creating a new log entry
  */
 export interface CreateLogDTO {
-  level: 'INFO' | 'ERROR' | 'WARN' | 'DEBUG' | 'TRACE' | 'FATAL';
-  projectId: string; // Required for associating logs with a project
-  data?: Record<string, any>; // Optional: Additional data to log
+  projectId: string;
+  timestamp?: Date;
+  level: LogLevel;
+  message: string;
+  data?: Record<string, any>;
   error?: {
     name: string;
     message: string;
-    stack?: string; // Optional: Stack trace for errors
-  }; // Optional: Error details if applicable
-  context?: Record<string, any>; // Optional: Contextual information
-  message: string;
-  service: string;
-  environment: 'development' | 'staging' | 'production';
-  metadata?: Record<string, any>;
-  timestamp?: string; // Optional: Defaults to server timestamp
+    stack?: string;
+    url?: string;
+    lineNumber?: number;
+    columnNumber?: number;
+  };
+  service?: string;
+  environment?: string;
+  context?: Record<string, any>;
+  metadata?: any;
+  eventType?:
+    | "error"
+    | "performance"
+    | "interaction"
+    | "network"
+    | "console"
+    | "pageview";
+  userAgent?: string;
+  url?: string;
+  referrer?: string;
 }
 
 /**
  * @description DTO for filtering logs via query params
  */
 export interface FilterLogsDTO {
-  level?: string;
+  projectId?: string; // Made optional here, but will be enforced in methods that need it
+  level?: LogLevel;
   service?: string;
   environment?: string;
-  search?: string;
+  search?: string; // for message
   startDate?: Date;
   endDate?: Date;
+  eventType?:
+    | "error"
+    | "performance"
+    | "interaction"
+    | "network"
+    | "console"
+    | "pageview";
+  userAgent?: string;
+  url?: string;
+  referrer?: string;
+  errorName?: string; // Filter by error.name
+  errorMessage?: string; // Filter by error.message regex
+
   page?: number;
   limit?: number;
   sortBy?: LogSortByField;
-  sortOrder?: 'asc' | 'desc';
+  sortOrder?: "asc" | "desc";
 }
+
+
+export interface LogSummaryData {
+  totalLogs: number;
+  byLevel: Record<LogLevel, number>;
+  byService: Record<string, number>;
+  byEnvironment: Record<string, number>;
+  byEventType: Record<string, number>;
+  topErrorMessages?: Array<{
+    message: string;
+    count: number;
+    lastSeen?: string;
+  }>; // Added lastSeen
+  recentLogCount?: number;
+  logTrends?: Array<{
+    _id: string;
+    count: number;
+    errorCount?: number;
+    warnCount?: number;
+  }>;
+  metadata: {
+    projectId: string | null;
+    filters: Omit<FilterLogsDTO, "page" | "limit" | "sortBy" | "sortOrder">;
+    generatedAt: Date;
+    responseTime?: number;
+  };
+}
+
+
+export type LogSortByField =
+  | "timestamp"
+  | "level"
+  | "service"
+  | "environment"
+  | "createdAt"
+  | "updatedAt"
+  | "eventType"
+  | "url";

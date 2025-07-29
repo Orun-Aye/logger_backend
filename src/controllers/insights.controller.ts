@@ -6,7 +6,7 @@ import {
 } from "../services/dashboardInsights.service";
 import { DashboardInsights, InsightsOptions } from "../types/app";
 import { GetInsightsDTO } from "../dtos/dashboard.dto";
-import { LogLevel } from "../services/log.service";
+import { LogLevel } from "../dtos/log.dto";
 
 /**
  * Standard API response interface for consistent JSON responses.

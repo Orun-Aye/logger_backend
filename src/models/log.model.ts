@@ -1,6 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-
 export interface ILog extends Document {
   projectId: string;
   timestamp: string;
@@ -11,11 +10,18 @@ export interface ILog extends Document {
     name: string;
     message: string;
     stack?: string;
+    url?: string;              
+    lineNumber?: number;       
+    columnNumber?: number;     
   };
   service?: string;
   environment?: string;
   context?: Record<string, any>;
   metadata?: any;
+  eventType?: 'error' | 'performance' | 'interaction' | 'network' | 'console' | 'pageview';
+  userAgent?: string;
+  url?: string;
+  referrer?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -28,7 +34,7 @@ const LogSchema: Schema = new Schema<ILog>(
       index: true,
     },
     timestamp: {
-      type: String, // ISO 8601 string
+      type: String,
       required: true,
       default: () => new Date().toISOString(),
     },
@@ -48,6 +54,9 @@ const LogSchema: Schema = new Schema<ILog>(
       name: String,
       message: String,
       stack: String,
+      url: String,              
+      lineNumber: Number,       
+      columnNumber: Number,     
     },
     service: {
       type: String,
@@ -63,10 +72,31 @@ const LogSchema: Schema = new Schema<ILog>(
     metadata: {
       type: Schema.Types.Mixed,
     },
+    eventType: {
+      type: String,
+      enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview'],
+      index: true, // Good for filtering by event type
+    },
+    userAgent: {
+      type: String,
+    },
+    url: {
+      type: String,
+      index: true, // Good for filtering by URL
+    },
+    referrer: {
+      type: String,
+    },
   },
   {
     timestamps: true, // adds createdAt and updatedAt
-  }
+  },
 );
+
+// ✅ ADDED - Additional indexes for better query performance
+LogSchema.index({ projectId: 1, timestamp: -1 }); // Common query pattern
+LogSchema.index({ projectId: 1, level: 1 }); // Filter by project and log level
+LogSchema.index({ projectId: 1, eventType: 1 }); // Filter by project and event type
+LogSchema.index({ url: 1, timestamp: -1 }); // URL-based queries with recency
 
 export const LogModel = mongoose.model<ILog>("Log", LogSchema);
