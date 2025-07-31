@@ -19,7 +19,7 @@ export enum LogLevel {
  */
 export interface CreateLogDTO {
   projectId: string;
-  timestamp?: Date;
+  timestamp?: Date | string | number;
   level: LogLevel;
   message: string;
   data?: Record<string, any>;

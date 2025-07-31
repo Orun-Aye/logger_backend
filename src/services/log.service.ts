@@ -102,6 +102,26 @@ export class LogService {
     try {
       this.validateObjectId(data.projectId); // Validate projectId
 
+      let normalizedTimestamp: Date | undefined;
+      if (data.timestamp !== undefined && data.timestamp !== null) {
+        if (data.timestamp instanceof Date) {
+          normalizedTimestamp = data.timestamp
+        } else if (typeof data.timestamp === "string" || typeof data.timestamp === "number") {
+          const parsedDate = new Date(data.timestamp)
+          // Check if parsing resulted in a valid date
+          if (!isNaN(parsedDate.getTime())) {
+            normalizedTimestamp = parsedDate
+          } else {
+            // If provided timestamp is invalid, log a warning and proceed without it
+            console.warn(`LogService: Invalid timestamo format provided: "${data.timestamp}". Using current timestamp`);
+
+          }
+        } else {
+          // Handle cases where data.timestamp is neither Date, string, nor number
+          console.warn(`LogService: Unexpected type for timestamp: "${typeof data.timestamp}". Using current timestamp`)
+        }
+      }
+
       // IMPORTANT: Re-evaluate this duplicate check for production logging.
       // For high-volume logging, checking for exact duplicates (projectId, message, timestamp)
       // can be a performance bottleneck and might prevent legitimate, slightly different logs.
@@ -111,7 +131,7 @@ export class LogService {
         projectId: data.projectId,
         message: data.message,
         // Ensure timestamp is an ISO string for comparison as per schema
-        timestamp: data.timestamp ? data.timestamp.toISOString() : undefined,
+        timestamp: normalizedTimestamp ? normalizedTimestamp.toISOString() : undefined,
       });
 
       if (existingLog) {
@@ -124,8 +144,8 @@ export class LogService {
       // Prepare log data, ensuring timestamp is an ISO string
       const newLogData: Partial<ILog> = {
         ...data,
-        timestamp: data.timestamp
-          ? data.timestamp.toISOString()
+        timestamp: normalizedTimestamp
+          ? normalizedTimestamp.toISOString()
           : new Date().toISOString(),
       };
 
