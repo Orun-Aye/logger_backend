@@ -5,22 +5,49 @@ import {
   ProjectService,
   ProjectNotFoundError,
   ProjectValidationError,
-  ProjectOperationError, // Import new error class
+  ProjectOperationError,
 } from "../services/project.service";
 import { CreateProjectDTO, UpdateProjectDTO } from "../dtos/project.dto";
-import { Types } from "mongoose"; // Import Types for ObjectId validation if needed in controller
+import { Types } from "mongoose";
 
-// Response interface for consistency
+/**
+ * Response interface for consistent API responses
+ */
 interface ApiResponse<T = any> {
   status: "success" | "error";
   message?: string;
   data?: T;
   errors?: string[];
   meta?: any;
+  // Additional properties for analytics endpoints
+  recentProjects?: any[];
+  topProjectsByLogs?: any[];
+  popularTags?: any[];
+  creationTrends?: any[];
 }
 
+/**
+ * ProjectController - Handles all project-related HTTP requests
+ * 
+ * This controller provides comprehensive project management including:
+ * - CRUD operations
+ * - Team member management
+ * - API key management
+ * - Analytics and reporting
+ * - Performance monitoring
+ * - Bulk operations
+ * - Project lifecycle management
+ */
 export class ProjectController {
-  // Centralized error handler
+  /**
+   * Centralized error handler for consistent error responses
+   * Maps service-level errors to appropriate HTTP status codes
+   * 
+   * @param error - The error object to handle
+   * @param res - Express response object
+   * @param defaultMessage - Fallback error message
+   * @returns HTTP response with appropriate status and error details
+   */
   private static handleError(
     error: Error,
     res: Response,
@@ -28,6 +55,7 @@ export class ProjectController {
   ): Response {
     console.error(`ProjectController Error: ${error.message}`, error.stack);
 
+    // Handle custom project errors
     if (error instanceof ProjectValidationError) {
       return res.status(400).json({
         status: "error",
@@ -50,9 +78,8 @@ export class ProjectController {
       } as ApiResponse);
     }
 
-    // Database/MongoDB specific errors
+    // Handle database-specific errors
     if (error.name === "ValidationError") {
-      // Mongoose validation error
       const errors = Object.values((error as any).errors).map(
         (err: any) => err.message
       );
@@ -70,14 +97,20 @@ export class ProjectController {
       } as ApiResponse);
     }
 
-    // Generic server error
+    // Generic server error fallback
     return res.status(500).json({
       status: "error",
       message: defaultMessage,
     } as ApiResponse);
   }
 
-  // Input validation helper for pagination
+  /**
+   * Validates and normalizes pagination and filtering parameters
+   * Ensures safe limits and default values for query operations
+   * 
+   * @param req - Express request object containing query parameters
+   * @returns Validated pagination and filter options
+   */
   private static validatePaginationParams(req: Request): {
     page: number;
     limit: number;
@@ -91,7 +124,7 @@ export class ProjectController {
     const limit = Math.min(
       100,
       Math.max(1, parseInt(req.query.limit as string) || 10)
-    ); // Cap at 100
+    ); // Cap at 100 for performance
     const sortBy = (req.query.sortBy as string) || "createdAt";
     const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
     const includeInactive = req.query.includeInactive === "true";
@@ -108,12 +141,21 @@ export class ProjectController {
     return { page, limit, sortBy, sortOrder, includeInactive, tags, searchBy };
   }
 
-  // --- Core CRUD Operations ---
+  // =============================================================================
+  // CORE CRUD OPERATIONS
+  // =============================================================================
 
+  /**
+   * Creates a new project
+   * POST /api/projects
+   * 
+   * @param req - Request containing project data and authenticated user ID
+   * @param res - Response with created project details
+   */
   static async create(req: Request, res: Response): Promise<Response> {
     try {
       const projectData = req.body;
-      // Assuming req.userId is set by an authentication middleware
+      // Assuming req.userId is set by authentication middleware
       const payload: CreateProjectDTO = { ...projectData, ownerId: req.userId };
       const project = await ProjectService.createProject(payload);
 
@@ -131,6 +173,18 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Retrieves all projects with pagination and filtering
+   * GET /api/projects
+   * 
+   * Query parameters:
+   * - page: Page number (default: 1)
+   * - limit: Items per page (default: 10, max: 100)
+   * - sortBy: Field to sort by (default: createdAt)
+   * - sortOrder: asc or desc (default: desc)
+   * - includeInactive: Include inactive projects (default: false)
+   * - tags: Comma-separated list of tags to filter by
+   */
   static async getAll(req: Request, res: Response): Promise<Response> {
     try {
       const { page, limit, sortBy, sortOrder, includeInactive, tags } =
@@ -161,11 +215,18 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Retrieves projects associated with a specific user
+   * GET /api/projects/user/:id
+   * 
+   * @param req - Request with user ID in params
+   * @param res - Response with user's projects
+   */
   static async getByUser(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
       const { page, limit, sortBy, sortOrder, searchBy, includeInactive } =
-        ProjectController.validatePaginationParams(req); // Reuse pagination validation
+        ProjectController.validatePaginationParams(req);
 
       const result = await ProjectService.getProjectsByUser(id, {
         page,
@@ -193,10 +254,17 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Retrieves a single project by ID
+   * GET /api/projects/:id
+   * 
+   * Query parameters:
+   * - populateRefs: Whether to populate referenced fields (default: false)
+   */
   static async getById(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
-      const populateRefs = req.query.populateRefs === "true"; // New query param
+      const populateRefs = req.query.populateRefs === "true";
       const project = await ProjectService.getProjectById(id, populateRefs);
 
       return res.status(200).json({
@@ -213,6 +281,13 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Updates an existing project
+   * PUT /api/projects/:id
+   * 
+   * @param req - Request with project ID and update data
+   * @param res - Response with updated project details
+   */
   static async updateById(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
@@ -234,10 +309,17 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Deletes a project (soft delete by default)
+   * DELETE /api/projects/:id
+   * 
+   * Query parameters:
+   * - hardDelete: Whether to permanently delete (default: false)
+   */
   static async delete(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
-      const hardDelete = req.query.hardDelete === "true"; // New query param for hard delete
+      const hardDelete = req.query.hardDelete === "true";
 
       await ProjectService.deleteProject(id, !hardDelete); // !hardDelete means softDelete
 
@@ -258,20 +340,29 @@ export class ProjectController {
     }
   }
 
-  // --- API Key Management ---
+  // =============================================================================
+  // API KEY MANAGEMENT
+  // =============================================================================
 
+  /**
+   * Regenerates API key for a project
+   * POST /api/projects/:id/regenerate-api-key
+   * 
+   * @param req - Request with project ID
+   * @param res - Response with new API key details
+   */
   static async regenerateApiKey(
     req: Request,
     res: Response
   ): Promise<Response> {
     try {
       const { id } = req.params;
-      const result = await ProjectService.regenerateApiKey(id); // Result now contains more info
+      const result = await ProjectService.regenerateApiKey(id);
 
       return res.status(200).json({
         status: "success",
         message: "API key regenerated successfully",
-        data: result, // Pass the whole result object
+        data: result,
       } as ApiResponse);
     } catch (error) {
       return ProjectController.handleError(
@@ -282,6 +373,14 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Finds a project by its API key
+   * GET /api/projects/by-api-key
+   * 
+   * API key can be provided via:
+   * - x-api-key header
+   * - apiKey query parameter
+   */
   static async getProjectByApiKey(
     req: Request,
     res: Response
@@ -314,12 +413,21 @@ export class ProjectController {
     }
   }
 
-  // --- Project Statistics and Health ---
+  // =============================================================================
+  // PROJECT STATISTICS AND HEALTH MONITORING
+  // =============================================================================
 
+  /**
+   * Retrieves comprehensive project statistics
+   * GET /api/projects/:id/stats
+   * 
+   * Query parameters:
+   * - recalculate: Force recalculation of stats (default: false)
+   */
   static async getProjectStats(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
-      const recalculate = req.query.recalculate === "true"; // New query param
+      const recalculate = req.query.recalculate === "true";
       const stats = await ProjectService.getProjectStats(id, recalculate);
 
       return res.status(200).json({
@@ -336,6 +444,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Performs health check on the project service
+   * GET /api/projects/health
+   * 
+   * Returns service health status and metrics
+   */
   static async healthCheck(req: Request, res: Response): Promise<Response> {
     try {
       const healthStatus = await ProjectService.healthCheck();
@@ -352,12 +466,11 @@ export class ProjectController {
           status: "error",
           message: "Project service is unhealthy",
           errors: [healthStatus.error],
-          data: healthStatus.metrics, // Still return available metrics
+          data: healthStatus.metrics,
           meta: { checkedAt: healthStatus.checkedAt },
         } as ApiResponse);
       }
     } catch (error) {
-      // This catch block would handle errors from ProjectService.healthCheck itself failing to execute
       return res.status(500).json({
         status: "error",
         message: "Failed to perform health check due to an unexpected error",
@@ -366,8 +479,49 @@ export class ProjectController {
     }
   }
 
-  // --- Team Member Management ---
+  /**
+   * Gets detailed project health data including uptime, error rates, and alerts
+   * GET /api/projects/:id/health
+   * 
+   * Query parameters:
+   * - timeRange: Time range in hours (default: 24)
+   * - includeAlerts: Include alert conditions (default: true)
+   */
+  static async getProjectHealth(req: Request, res: Response): Promise<Response> {
+    try {
+      const { id } = req.params;
+      const timeRange = parseInt(req.query.timeRange as string) || 24;
+      const includeAlerts = req.query.includeAlerts !== "false";
 
+      const healthData = await ProjectService.getProjectHealth(id, {
+        timeRange,
+        includeAlerts,
+      });
+
+      return res.status(200).json({
+        status: "success",
+        message: "Project health data fetched successfully",
+        data: healthData,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch project health data"
+      );
+    }
+  }
+
+  // =============================================================================
+  // TEAM MEMBER MANAGEMENT
+  // =============================================================================
+
+  /**
+   * Adds a team member to a project
+   * POST /api/projects/:projectId/team-members
+   * 
+   * Body: { userId: string, role: "admin" | "viewer" }
+   */
   static async addTeamMember(req: Request, res: Response) {
     try {
       const { userId, role } = req.body;
@@ -400,6 +554,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Removes a team member from a project
+   * DELETE /api/projects/:projectId/team-members
+   * 
+   * Body: { userId: string }
+   */
   static async removeTeamMember(req: Request, res: Response) {
     try {
       const { userId } = req.body;
@@ -428,6 +588,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Updates a team member's role
+   * PUT /api/projects/:projectId/team-members
+   * 
+   * Body: { userId: string, role: "admin" | "viewer" }
+   */
   static async updateTeamMemberRole(req: Request, res: Response) {
     try {
       const { userId, role } = req.body;
@@ -460,6 +626,10 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Retrieves all team members for a project
+   * GET /api/projects/:projectId/team-members
+   */
   static async getTeamMembers(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
@@ -479,8 +649,16 @@ export class ProjectController {
     }
   }
 
-  // --- Tag Management ---
+  // =============================================================================
+  // TAG MANAGEMENT
+  // =============================================================================
 
+  /**
+   * Adds tags to a project
+   * POST /api/projects/:projectId/tags
+   * 
+   * Body: { tags: string[] }
+   */
   static async addTags(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
@@ -509,6 +687,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Removes tags from a project
+   * DELETE /api/projects/:projectId/tags
+   * 
+   * Body: { tags: string[] }
+   */
   static async removeTags(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
@@ -537,20 +721,26 @@ export class ProjectController {
     }
   }
 
-  // --- Rate Limit Configuration ---
+  // =============================================================================
+  // RATE LIMIT CONFIGURATION
+  // =============================================================================
 
+  /**
+   * Updates rate limit configuration for a project
+   * PUT /api/projects/:projectId/rate-limit
+   * 
+   * Body: { maxRequestsPerMinute?: number, burstLimit?: number }
+   */
   static async updateRateLimit(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
       const { maxRequestsPerMinute, burstLimit } = req.body;
 
-      if (
-        maxRequestsPerMinute === undefined &&
-        burstLimit === undefined
-      ) {
+      if (maxRequestsPerMinute === undefined && burstLimit === undefined) {
         return res.status(400).json({
           status: "error",
-          message: "At least one of maxRequestsPerMinute or burstLimit is required",
+          message:
+            "At least one of maxRequestsPerMinute or burstLimit is required",
         } as ApiResponse);
       }
 
@@ -573,8 +763,14 @@ export class ProjectController {
     }
   }
 
-  // --- Project Log Count Sync ---
+  // =============================================================================
+  // PROJECT LOG COUNT SYNCHRONIZATION
+  // =============================================================================
 
+  /**
+   * Synchronizes log count for a specific project
+   * POST /api/projects/:projectId/sync-log-count
+   */
   static async syncLogCount(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
@@ -594,6 +790,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Synchronizes log counts for all projects
+   * POST /api/projects/sync-all-log-counts
+   * 
+   * This operation may take time for large numbers of projects
+   */
   static async syncAllLogCounts(req: Request, res: Response): Promise<Response> {
     try {
       const result = await ProjectService.syncAllProjectLogCounts();
@@ -612,41 +814,61 @@ export class ProjectController {
     }
   }
 
-  static async incrementLogCount(req: Request, res: Response): Promise<Response> {
+  /**
+   * Increments the log count for a project
+   * POST /api/projects/:projectId/increment-log-count
+   * 
+   * Body: { increment: number }
+   */
+  static async incrementLogCount(
+    req: Request,
+    res: Response
+  ): Promise<Response> {
     try {
       const { projectId } = req.params;
       const { increment } = req.body;
 
-      if (typeof increment !== 'number' || increment <= 0) {
+      if (typeof increment !== "number" || increment <= 0) {
         return res.status(400).json({
-          status: 'error',
-          message: 'Increment must be a positive number',
+          status: "error",
+          message: "Increment must be a positive number",
         } as ApiResponse);
       }
 
-      const result = await ProjectService.incrementLogCount(projectId, increment);
+      const result = await ProjectService.incrementLogCount(
+        projectId,
+        increment
+      );
 
       return res.status(200).json({
-        status: 'success',
-        message: 'Log count incremented successfully',
+        status: "success",
+        message: "Log count incremented successfully",
         data: result,
       } as ApiResponse);
     } catch (error) {
       return ProjectController.handleError(
         error as Error,
         res,
-        'Failed to increment log count'
+        "Failed to increment log count"
       );
     }
   }
 
+  // =============================================================================
+  // BULK OPERATIONS
+  // =============================================================================
 
-  // --- Bulk Operations ---
-
+  /**
+   * Bulk delete multiple projects
+   * DELETE /api/projects/bulk
+   * 
+   * Body: { ids: string[] }
+   * Query: hardDelete=true/false
+   */
   static async bulkDelete(req: Request, res: Response): Promise<Response> {
     try {
       const { ids } = req.body;
-      const hardDelete = req.query.hardDelete === "true"; // Allow hard delete for bulk
+      const hardDelete = req.query.hardDelete === "true";
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({
@@ -694,6 +916,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Bulk update multiple projects
+   * PUT /api/projects/bulk
+   * 
+   * Body: { ids: string[], updateData: Partial<UpdateProjectDTO> }
+   */
   static async bulkUpdate(req: Request, res: Response): Promise<Response> {
     try {
       const { ids, updateData } = req.body;
@@ -728,8 +956,14 @@ export class ProjectController {
     }
   }
 
-  // --- Project Lifecycle Management ---
+  // =============================================================================
+  // PROJECT LIFECYCLE MANAGEMENT
+  // =============================================================================
 
+  /**
+   * Restores a soft-deleted project
+   * POST /api/projects/:id/restore
+   */
   static async restoreProject(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
@@ -749,6 +983,12 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Archives a project with optional reason
+   * POST /api/projects/:id/archive
+   * 
+   * Body: { archiveReason?: string }
+   */
   static async archiveProject(req: Request, res: Response): Promise<Response> {
     try {
       const { id } = req.params;
@@ -770,10 +1010,16 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Duplicates an existing project
+   * POST /api/projects/:sourceProjectId/duplicate
+   * 
+   * Body: { newName: string, ownerId: string, options?: DuplicationOptions }
+   */
   static async duplicateProject(req: Request, res: Response): Promise<Response> {
     try {
       const { sourceProjectId } = req.params;
-      const { newName, ownerId, options } = req.body; // ownerId should probably come from auth context for security
+      const { newName, ownerId, options } = req.body;
 
       if (!newName || !ownerId) {
         return res.status(400).json({
@@ -803,10 +1049,16 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Transfers project ownership
+   * POST /api/projects/:projectId/transfer-ownership
+   * 
+   * Body: { newOwnerId: string, currentOwnerId: string }
+   */
   static async transferOwnership(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
-      const { newOwnerId, currentOwnerId } = req.body; // currentOwnerId should ideally be from req.userId
+      const { newOwnerId, currentOwnerId } = req.body;
 
       if (!newOwnerId || !currentOwnerId) {
         return res.status(400).json({
@@ -835,8 +1087,16 @@ export class ProjectController {
     }
   }
 
-  // --- Integration Settings ---
+  // =============================================================================
+  // INTEGRATION SETTINGS MANAGEMENT
+  // =============================================================================
 
+  /**
+   * Updates integration settings for a project
+   * PUT /api/projects/:projectId/integration-settings
+   * 
+   * Body: { integrationSettings: Record<string, any> }
+   */
   static async updateIntegrationSettings(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
@@ -865,8 +1125,19 @@ export class ProjectController {
     }
   }
 
-  // --- Analytics and Summary ---
+  // =============================================================================
+  // ANALYTICS AND REPORTING
+  // =============================================================================
 
+  /**
+   * Gets comprehensive project analytics
+   * GET /api/projects/analytics
+   * 
+   * Query parameters:
+   * - startDate: Start date for analytics (ISO string)
+   * - endDate: End date for analytics (ISO string)
+   * - groupBy: Grouping granularity (day/week/month)
+   */
   static async getAnalytics(req: Request, res: Response): Promise<Response> {
     try {
       const { startDate, endDate, groupBy } = req.query;
@@ -893,10 +1164,21 @@ export class ProjectController {
     }
   }
 
+  /**
+   * Gets comprehensive projects summary with enhanced metadata
+   * GET /api/projects/summary
+   * 
+   * Query parameters:
+   * - groupBy: Grouping for trends (day/week/month)
+   * - startDate: Start date for filtering
+   * - endDate: End date for filtering
+   * - includeInactive: Include inactive projects
+   * - limit: Limit for top lists (default: 5)
+   */
   static async getProjectsSummary(req: Request, res: Response): Promise<Response> {
     try {
       const { groupBy, startDate, endDate, includeInactive, limit } = req.query;
-      const userId = req.userId; // Assuming userId from authentication
+      const userId = req.userId; // From authentication middleware
 
       const options = {
         groupBy: groupBy as "day" | "week" | "month" | undefined,
@@ -923,6 +1205,388 @@ export class ProjectController {
         error as Error,
         res,
         "Failed to fetch projects summary"
+      );
+    }
+  }
+
+  // =============================================================================
+  // PERFORMANCE MONITORING AND METRICS
+  // =============================================================================
+
+  /**
+   * Gets log volume trends over time
+   * GET /api/projects/metrics/log-volume
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   * - granularity: Time granularity (hour/day/week/month)
+   */
+  static async getLogVolumeTrends(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, startDate, endDate, granularity } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        granularity: granularity as "hour" | "day" | "week" | "month",
+        userId,
+      };
+
+      const trends = await ProjectService.getLogVolumeTrends(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Log volume trends fetched successfully",
+        data: trends,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch log volume trends"
+      );
+    }
+  }
+
+  /**
+   * Gets comprehensive error distribution analysis
+   * GET /api/projects/metrics/error-distribution
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   * - limit: Limit for top lists (default: 10)
+   */
+  static async getErrorDistribution(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, startDate, endDate, limit } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId,
+        limit: limit ? parseInt(limit as string) : undefined,
+      };
+
+      const distribution = await ProjectService.getErrorDistribution(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Error distribution fetched successfully",
+        data: distribution,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch error distribution"
+      );
+    }
+  }
+
+  /**
+   * Gets log levels distribution with timeline
+   * GET /api/projects/metrics/log-levels
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   */
+  static async getLogLevelsDistribution(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, startDate, endDate } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId,
+      };
+
+      const distribution = await ProjectService.getLogLevelsDistribution(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Log levels distribution fetched successfully",
+        data: distribution,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch log levels distribution"
+      );
+    }
+  }
+
+  /**
+   * Gets response time trends and performance metrics
+   * GET /api/projects/metrics/response-times
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   * - granularity: Time granularity (hour/day)
+   */
+  static async getResponseTimeTrends(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, startDate, endDate, granularity } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        granularity: granularity as "hour" | "day",
+        userId,
+      };
+
+      const trends = await ProjectService.getResponseTimeTrends(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Response time trends fetched successfully",
+        data: trends,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch response time trends"
+      );
+    }
+  }
+
+  /**
+   * Gets top error sources with detailed analysis
+   * GET /api/projects/metrics/error-sources
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   * - limit: Number of sources to return (default: 10)
+   * - groupBy: Group errors by field (url/service/userAgent/error.name)
+   */
+  static async getTopErrorSources(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, startDate, endDate, limit, groupBy } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId,
+        limit: limit ? parseInt(limit as string) : undefined,
+        groupBy: groupBy as "url" | "service" | "userAgent" | "error.name",
+      };
+
+      const sources = await ProjectService.getTopErrorSources(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Top error sources fetched successfully",
+        data: sources,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch top error sources"
+      );
+    }
+  }
+
+  /**
+   * Gets comprehensive service performance metrics
+   * GET /api/projects/metrics/service-performance
+   * 
+   * Query parameters:
+   * - projectId: Specific project ID (optional)
+   * - serviceName: Specific service name (optional)
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   */
+  static async getServicePerformance(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId, serviceName, startDate, endDate } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        projectId: projectId as string,
+        serviceName: serviceName as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId,
+      };
+
+      const performance = await ProjectService.getServicePerformance(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Service performance metrics fetched successfully",
+        data: performance,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch service performance metrics"
+      );
+    }
+  }
+
+  /**
+   * Gets comprehensive usage statistics
+   * GET /api/projects/metrics/usage-statistics
+   * 
+   * Query parameters:
+   * - startDate: Start date for analysis
+   * - endDate: End date for analysis
+   * - includeUserBreakdown: Include user-level breakdown (default: false)
+   */
+  static async getUsageStatistics(req: Request, res: Response): Promise<Response> {
+    try {
+      const { startDate, endDate, includeUserBreakdown } = req.query;
+      const userId = req.userId;
+
+      const options = {
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId,
+        includeUserBreakdown: includeUserBreakdown === "true",
+      };
+
+      const statistics = await ProjectService.getUsageStatistics(options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Usage statistics fetched successfully",
+        data: statistics,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch usage statistics"
+      );
+    }
+  }
+
+  // =============================================================================
+  // SEARCH AND FILTERING
+  // =============================================================================
+
+  /**
+   * Searches projects by name or description
+   * GET /api/projects/search
+   * 
+   * Query parameters:
+   * - q: Search query string
+   * - limit: Maximum results to return (default: 10)
+   * - includeInactive: Include inactive projects (default: false)
+   * - tags: Comma-separated tags to filter by
+   */
+  static async searchProjects(req: Request, res: Response): Promise<Response> {
+    try {
+      const { q: query, limit, includeInactive, tags } = req.query;
+      const userId = req.userId;
+
+      if (!query || typeof query !== 'string') {
+        return res.status(400).json({
+          status: "error",
+          message: "Search query 'q' parameter is required",
+        } as ApiResponse);
+      }
+
+      const options = {
+        limit: limit ? parseInt(limit as string) : undefined,
+        includeInactive: includeInactive === "true",
+        tags: typeof tags === "string" ? tags.split(",").map(tag => tag.trim()) : undefined,
+        userId,
+      };
+
+      const results = await ProjectService.searchProjects(query, options);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Project search completed successfully",
+        data: results,
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to search projects"
+      );
+    }
+  }
+
+  // =============================================================================
+  // DATA EXPORT AND IMPORT
+  // =============================================================================
+
+  /**
+   * Exports project data with optional log inclusion
+   * GET /api/projects/:projectId/export
+   * 
+   * Query parameters:
+   * - includeLogs: Include log data in export (default: false)
+   * - startDate: Start date for log export (if includeLogs=true)
+   * - endDate: End date for log export (if includeLogs=true)
+   * - format: Export format (json/csv) (default: json)
+   */
+  static async exportProjectData(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { includeLogs, startDate, endDate, format } = req.query;
+
+      const options = {
+        includeLogs: includeLogs === "true",
+        dateRange: (startDate && endDate) ? {
+          start: new Date(startDate as string),
+          end: new Date(endDate as string),
+        } : undefined,
+        format: format as "json" | "csv" || "json",
+      };
+
+      const exportData = await ProjectService.exportProjectData(projectId, options);
+
+      // Set appropriate headers for file download
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `project-${projectId}-export-${timestamp}.${options.format}`;
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 
+        options.format === 'csv' ? 'text/csv' : 'application/json'
+      );
+
+      return res.status(200).json({
+        status: "success",
+        message: "Project data exported successfully",
+        data: exportData,
+        meta: {
+          filename,
+          exportedAt: new Date(),
+          format: options.format,
+        },
+      } as ApiResponse);
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to export project data"
       );
     }
   }

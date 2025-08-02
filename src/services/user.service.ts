@@ -56,8 +56,6 @@ export class UserService {
     try {
       this.validateUserSignupData(data);
 
-      const hashedPassword = await bcrypt.hash(data.password, 10); // Hash the password here if needed
-
       // Check for existing user with the same email
       const existingUser = await UserModel.findOne({
         email: data.email,
@@ -65,6 +63,9 @@ export class UserService {
       if (existingUser) {
         throw new UserValidationError("User with this email already exists");
       }
+
+      // Hash the password here if needed
+      const hashedPassword = await bcrypt.hash(data.password, 10); 
 
       // Create a new user
       const newUser = new UserModel({
