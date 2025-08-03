@@ -217,14 +217,14 @@ export class ProjectController {
 
   /**
    * Retrieves projects associated with a specific user
-   * GET /api/projects/user/:id
+   * GET /api/projects/user
    * 
-   * @param req - Request with user ID in params
+   * @param req - Request with user ID attached
    * @param res - Response with user's projects
    */
   static async getByUser(req: Request, res: Response): Promise<Response> {
     try {
-      const { id } = req.params;
+      const id = req.userId;
       const { page, limit, sortBy, sortOrder, searchBy, includeInactive } =
         ProjectController.validatePaginationParams(req);
 
@@ -243,6 +243,7 @@ export class ProjectController {
         data: result.projects,
         meta: {
           pagination: result.pagination,
+          route: "getByUser"
         },
       } as ApiResponse);
     } catch (error) {

@@ -25,7 +25,7 @@ router.get("/analytics", verifyToken, ProjectController.getAnalytics);
 router.post("/", verifyToken, ProjectController.create); // Create a new project
 
 // Specific GET routes should come before general :id GET route
-router.get("/user/:id", verifyToken, ProjectController.getByUser); // Get projects associated with a specific user ID
+router.get("/", verifyToken, ProjectController.getByUser); // Get projects associated with a specific user ID
 router.get("/:id/stats", verifyToken, ProjectController.getProjectStats); // Get project usage statistics (log count, etc.)
 router.get("/:id/team-members", verifyToken, ProjectController.getTeamMembers); // Get team members for a specific project
 
@@ -81,6 +81,6 @@ router.delete("/:id", verifyToken, ProjectController.delete); // Delete a projec
 
 
 // Get all projects (general catch-all for '/') - usually placed towards the end
-router.get("/", verifyToken, ProjectController.getAll);
+router.get("/all", verifyToken, ProjectController.getAll);
 
 export default router;
