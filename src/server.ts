@@ -1,22 +1,25 @@
-import express, { NextFunction, Request, Response } from "express";
+import express from "express";
 import dotenv from "dotenv";
 import { connectDB } from "./utils/db";
 import projectRoutes from "./routes/project.routes";
 import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
-import insightRoutes from "./routes/insights.routes"
-import cors from "cors"; 
+import dashboardRoutes from "./routes/dashboard.routes";
+import { createServer } from "http";
+import { DashboardWebSocketService } from "./services/websocket.service";
+import { LogService } from "./services/log.service";
+import { DashboardService } from "./services/dashboard.service";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const server = createServer(app)
+const JWT_SECRET = process.env.JWT_SECRET!
 
-app.use(cors({
-  origin: "http://localhost:3000",
-  credentials: true, // This is important if you are sending cookies or authorization headers
-}));
+
+
 
 app.use(express.json());
 
@@ -24,19 +27,29 @@ app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/", logRoutes);
 app.use('/api/v1/alerts', alertRuleRoutes);
-app.use('/api/v1/dashboard/', insightRoutes);
+app.use('/api/v1/dashboard/', dashboardRoutes)
+
+
+const dashboardWebSocketService = new DashboardWebSocketService(server, JWT_SECRET);
 
 
 // Start the server
 const startServer = async () => {
   await connectDB(process.env.MONGODB_URI);
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-  });
+  server.listen(PORT, () => {
+  console.log(`WebSocket server is running on port ${PORT}`);
+})
 };
+
 
 startServer().catch((err) => {
   console.error("Failed to start server:", err);
   process.exit(1);
 });
+
+export const globalServices = {
+  dashboardWebSocketService,
+  logService: LogService,
+  dashboardService: DashboardService
+}

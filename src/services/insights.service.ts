@@ -24,6 +24,7 @@ import { IProject, ProjectModel } from "../models/project.model";
 import { GetInsightsDTO } from "../dtos/dashboard.dto";
 import { LogLevel } from "../dtos/log.dto";
 
+
 let redisClient: RedisClientType | undefined;
 
 interface MatchStage {

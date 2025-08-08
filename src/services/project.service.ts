@@ -38,10 +38,12 @@ export interface ProjectsSummaryData {
     totalProjects: number;
     activeProjects: number;
     inactiveProjects: number;
-    totalLogsOverall: number; // New field for total logs across all projects
-    avgLogsPerProject: number; // New field for average logs per project
-    maxLogsPerProject: number; // Added field for max logs per project
-    minLogsPerProject: number; // Added field for min logs per project
+    totalLogsOverall: number; // Total logs across all projects (from LogModel)
+    avgLogsPerProject: number; // Average logs per project
+    maxLogsPerProject: number; // Max logs per project
+    minLogsPerProject: number; // Min logs per project
+    totalActiveErrorLogs: number; // NEW: Error logs from the last hour
+    totalActiveProjects: number; // NEW: Projects with activity in last 24 hours
   };
   recentProjects: Array<{
     name: string;
@@ -72,6 +74,7 @@ export interface ProjectsSummaryData {
     generatedAt: Date;
   };
 }
+
 
 export class ProjectService {
   // Input validation helper
@@ -1526,237 +1529,287 @@ export class ProjectService {
   }
 
   static async getProjectsSummary(
-    userId?: string,
-    options: {
-      groupBy?: "day" | "week" | "month";
-      startDate?: Date;
-      endDate?: Date;
-      includeInactive?: boolean;
-      limit?: number;
-    } = {}
-  ): Promise<ProjectsSummaryData> {
-    try {
-      const {
-        groupBy = "day",
-        startDate,
-        endDate,
-        includeInactive = false,
-        limit = 5,
-      } = options;
+  userId?: string,
+  options: {
+    groupBy?: "day" | "week" | "month";
+    startDate?: Date;
+    endDate?: Date;
+    includeInactive?: boolean;
+    limit?: number;
+  } = {}
+): Promise<ProjectsSummaryData> {
+  try {
+    const {
+      groupBy = "day",
+      startDate,
+      endDate,
+      includeInactive = false,
+      limit = 5,
+    } = options;
 
-      // Base query to filter by user ownership/membership if userId is provided
-      const userFilter = userId
-        ? {
-            $or: [
-              { ownerId: new Types.ObjectId(userId) },
-              { "teamMembers.user": new Types.ObjectId(userId) },
-            ],
-          }
-        : {};
+    // Base query to filter by user ownership/membership if userId is provided
+    const userFilter = userId
+      ? {
+          $or: [
+            { ownerId: new Types.ObjectId(userId) },
+            { "teamMembers.user": new Types.ObjectId(userId) },
+          ],
+        }
+      : {};
 
-      // Date range filter for creation trends
-      const dateFilter: any = {};
-      if (startDate || endDate) {
-        dateFilter.createdAt = {};
-        if (startDate) dateFilter.createdAt.$gte = startDate;
-        if (endDate) dateFilter.createdAt.$lte = endDate;
-      }
-
-      // Active filter
-      const activeFilter = includeInactive ? {} : { isActive: true };
-
-      // All promises run concurrently
-      const [
-        totalProjectsCount,
-        activeProjectsCount,
-        recentProjects,
-        topProjectsByLogs,
-        popularTags,
-        overallStats,
-        creationTrends,
-      ] = await Promise.all([
-        // 1. Total Projects Count (matching user filter)
-        ProjectModel.countDocuments(userFilter),
-
-        // 2. Active Projects Count (matching user filter)
-        ProjectModel.countDocuments({ ...userFilter, isActive: true }),
-
-        // 3. Recent Projects (active, sorted by last update)
-        ProjectModel.find({ ...userFilter, ...activeFilter })
-          .sort({ updatedAt: -1 })
-          .limit(limit)
-          .select("name logCount lastIngestedAt createdAt ownerId tags")
-          .populate("ownerId", "name email")
-          .lean(),
-
-        // 4. Top Projects by Log Count (active, sorted by logCount)
-        ProjectModel.find({ ...userFilter, ...activeFilter })
-          .sort({ logCount: -1 })
-          .limit(limit)
-          .select("name logCount createdAt")
-          .lean(),
-
-        // 5. Popular Tags (active projects, matching user filter)
-        ProjectModel.aggregate([
-          { $match: { ...userFilter, ...activeFilter } },
-          { $unwind: { path: "$tags", preserveNullAndEmptyArrays: false } },
-          {
-            $group: {
-              _id: "$tags",
-              count: { $sum: 1 },
-              projectIds: { $addToSet: "$_id" }, // Track which projects use this tag
-            },
-          },
-          { $match: { _id: { $nin: [null, ""] } } }, // Exclude null/empty tags
-          { $sort: { count: -1 } },
-          { $limit: 10 },
-          {
-            $project: {
-              _id: 1,
-              count: 1,
-              projectCount: { $size: "$projectIds" }, // How many unique projects use this tag
-            },
-          },
-        ]),
-
-        // 6. Overall Stats with better error handling
-        ProjectModel.aggregate([
-          { $match: { ...userFilter } },
-          {
-            $group: {
-              _id: null,
-              totalProjects: { $sum: 1 },
-              activeProjects: { $sum: { $cond: ["$isActive", 1, 0] } },
-              totalLogs: { $sum: { $ifNull: ["$logCount", 0] } }, // Handle null logCount
-              avgLogsPerProject: { $avg: { $ifNull: ["$logCount", 0] } },
-              maxLogs: { $max: { $ifNull: ["$logCount", 0] } },
-              minLogs: { $min: { $ifNull: ["$logCount", 0] } },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              totalProjects: 1,
-              activeProjects: 1,
-              totalLogs: 1,
-              avgLogsPerProject: {
-                $round: [{ $ifNull: ["$avgLogsPerProject", 0] }, 1],
-              },
-              maxLogs: 1,
-              minLogs: 1,
-              inactiveProjects: {
-                $subtract: ["$totalProjects", "$activeProjects"],
-              },
-            },
-          },
-        ]),
-
-        // 7. Creation Trends (conditional based on groupBy parameter)
-        groupBy
-          ? ProjectModel.aggregate([
-              { $match: { ...userFilter, ...dateFilter } },
-              {
-                $group: {
-                  _id: {
-                    $dateToString: {
-                      format:
-                        groupBy === "day"
-                          ? "%Y-%m-%d"
-                          : groupBy === "week"
-                          ? "%Y-%U"
-                          : "%Y-%m",
-                      date: "$createdAt",
-                    },
-                  },
-                  count: { $sum: 1 },
-                  activeCount: { $sum: { $cond: ["$isActive", 1, 0] } },
-                },
-              },
-              { $sort: { _id: 1 } },
-              { $limit: 50 }, // Prevent excessive data
-            ])
-          : Promise.resolve([]),
-      ]);
-
-      // Extract the single result from overallStats aggregation
-      const overallSummary = overallStats[0] || {
-        totalProjects: 0,
-        activeProjects: 0,
-        inactiveProjects: 0,
-        totalLogs: 0,
-        avgLogsPerProject: 0,
-        maxLogs: 0,
-        minLogs: 0,
-      };
-
-      // Add performance metrics
-      const performanceMetrics = {
-        responseTime: Date.now(), // You'd calculate this properly
-        cacheHit: false, // Implement caching logic
-        queryCount: 7,
-      };
-
-      return {
-        summary: {
-          totalProjects: overallSummary.totalProjects,
-          activeProjects: overallSummary.activeProjects,
-          inactiveProjects: overallSummary.inactiveProjects,
-          totalLogsOverall: overallSummary.totalLogs,
-          avgLogsPerProject: overallSummary.avgLogsPerProject,
-          maxLogsPerProject: overallSummary.maxLogs,
-          minLogsPerProject: overallSummary.minLogs,
-        },
-        recentProjects: recentProjects.map((project) => ({
-          ...project,
-          // Add computed fields
-          daysSinceCreated: Math.floor(
-            (Date.now() - new Date(project.createdAt ?? 0).getTime()) /
-              (1000 * 60 * 60 * 24)
-          ),
-        })),
-        topProjectsByLogs,
-        popularTags,
-        creationTrends: groupBy ? creationTrends : undefined,
-        metadata: {
-          userId: userId || null,
-          filters: {
-            includeInactive,
-            dateRange: startDate || endDate ? { startDate, endDate } : null,
-            groupBy,
-          },
-          generatedAt: new Date(),
-          ...performanceMetrics,
-        },
-      };
-    } catch (error: any) {
-      // Enhanced error handling with context
-      const errorContext = {
-        userId,
-        options,
-        timestamp: new Date(),
-      };
-
-      // Log the error with context (implement your logging strategy)
-      console.error("ProjectsSummary Error:", {
-        error: error.message,
-        context: errorContext,
-      });
-
-      // Re-throw custom errors or wrap generic ones
-      if (
-        error instanceof ProjectOperationError ||
-        error instanceof ProjectNotFoundError
-      ) {
-        throw error;
-      }
-
-      throw new ProjectOperationError(
-        `Failed to get projects summary: ${
-          error.message || error
-        } :: Context: ${errorContext}`
-      );
+    // Date range filter for creation trends
+    const dateFilter: any = {};
+    if (startDate || endDate) {
+      dateFilter.createdAt = {};
+      if (startDate) dateFilter.createdAt.$gte = startDate;
+      if (endDate) dateFilter.createdAt.$lte = endDate;
     }
+
+    // Active filter
+    const activeFilter = includeInactive ? {} : { isActive: true };
+
+    // Get user's project IDs for log filtering
+    let userProjectIds: string[] = [];
+    if (userId || Object.keys(userFilter).length > 0) {
+      const userProjects = await ProjectModel.find(userFilter)
+        .select("_id")
+        .lean();
+      userProjectIds = userProjects.map((p) => p._id.toString());
+    }
+
+    // Build log match stage based on user's projects or all projects
+    const logMatchStage: any = {};
+    if (userProjectIds.length > 0) {
+      logMatchStage.projectId = { $in: userProjectIds };
+    }
+
+    // Time filter for recent error logs (last hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // All promises run concurrently
+    const [
+      totalProjectsCount,
+      activeProjectsCount,
+      recentProjects,
+      topProjectsByLogs,
+      popularTags,
+      overallStats,
+      creationTrends,
+      totalLogsAcrossProjects,
+      totalActiveErrorLogs,
+      totalActiveProjects,
+    ] = await Promise.all([
+      // 1. Total Projects Count (matching user filter)
+      ProjectModel.countDocuments(userFilter),
+
+      // 2. Active Projects Count (matching user filter)
+      ProjectModel.countDocuments({ ...userFilter, isActive: true }),
+
+      // 3. Recent Projects (active, sorted by last update)
+      ProjectModel.find({ ...userFilter, ...activeFilter })
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .select("name logCount lastIngestedAt createdAt ownerId tags")
+        .populate("ownerId", "name email")
+        .lean(),
+
+      // 4. Top Projects by Log Count (active, sorted by logCount)
+      ProjectModel.find({ ...userFilter, ...activeFilter })
+        .sort({ logCount: -1 })
+        .limit(limit)
+        .select("name logCount createdAt")
+        .lean(),
+
+      // 5. Popular Tags (active projects, matching user filter)
+      ProjectModel.aggregate([
+        { $match: { ...userFilter, ...activeFilter } },
+        { $unwind: { path: "$tags", preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: "$tags",
+            count: { $sum: 1 },
+            projectIds: { $addToSet: "$_id" }, // Track which projects use this tag
+          },
+        },
+        { $match: { _id: { $nin: [null, ""] } } }, // Exclude null/empty tags
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+        {
+          $project: {
+            _id: 1,
+            count: 1,
+            projectCount: { $size: "$projectIds" }, // How many unique projects use this tag
+          },
+        },
+      ]),
+
+      // 6. Overall Stats with better error handling
+      ProjectModel.aggregate([
+        { $match: { ...userFilter } },
+        {
+          $group: {
+            _id: null,
+            totalProjects: { $sum: 1 },
+            activeProjects: { $sum: { $cond: ["$isActive", 1, 0] } },
+            totalLogs: { $sum: { $ifNull: ["$logCount", 0] } }, // Handle null logCount
+            avgLogsPerProject: { $avg: { $ifNull: ["$logCount", 0] } },
+            maxLogs: { $max: { $ifNull: ["$logCount", 0] } },
+            minLogs: { $min: { $ifNull: ["$logCount", 0] } },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalProjects: 1,
+            activeProjects: 1,
+            totalLogs: 1,
+            avgLogsPerProject: {
+              $round: [{ $ifNull: ["$avgLogsPerProject", 0] }, 1],
+            },
+            maxLogs: 1,
+            minLogs: 1,
+            inactiveProjects: {
+              $subtract: ["$totalProjects", "$activeProjects"],
+            },
+          },
+        },
+      ]),
+
+      // 7. Creation Trends (conditional based on groupBy parameter)
+      groupBy
+        ? ProjectModel.aggregate([
+            { $match: { ...userFilter, ...dateFilter } },
+            {
+              $group: {
+                _id: {
+                  $dateToString: {
+                    format:
+                      groupBy === "day"
+                        ? "%Y-%m-%d"
+                        : groupBy === "week"
+                        ? "%Y-%U"
+                        : "%Y-%m",
+                    date: "$createdAt",
+                  },
+                },
+                count: { $sum: 1 },
+                activeCount: { $sum: { $cond: ["$isActive", 1, 0] } },
+              },
+            },
+            { $sort: { _id: 1 } },
+            { $limit: 50 }, // Prevent excessive data
+          ])
+        : Promise.resolve([]),
+
+      // 8. NEW: Total logs across all projects (from LogModel)
+      LogModel.countDocuments(logMatchStage),
+
+      // 9. NEW: Total active error logs from the last hour
+      LogModel.countDocuments({
+        ...logMatchStage,
+        level: "error",
+        timestamp: {
+          $gte: oneHourAgo.toISOString(),
+        },
+      }),
+
+      // 10. NEW: Total active projects (projects with recent activity in last 24 hours)
+      LogModel.distinct("projectId", {
+        ...logMatchStage,
+        timestamp: {
+          $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        },
+      }).then((projectIds) => {
+        // If user filter is applied, ensure the active projects belong to the user
+        if (userProjectIds.length > 0) {
+          return projectIds.filter((id) => userProjectIds.includes(id)).length;
+        }
+        return projectIds.length;
+      }),
+    ]);
+
+    // Extract the single result from overallStats aggregation
+    const overallSummary = overallStats[0] || {
+      totalProjects: 0,
+      activeProjects: 0,
+      inactiveProjects: 0,
+      totalLogs: 0,
+      avgLogsPerProject: 0,
+      maxLogs: 0,
+      minLogs: 0,
+    };
+
+    // Add performance metrics
+    const performanceMetrics = {
+      responseTime: Date.now(), // You'd calculate this properly
+      cacheHit: false, // Implement caching logic
+      queryCount: 10, // Updated to reflect new queries
+    };
+
+    return {
+      summary: {
+        totalProjects: overallSummary.totalProjects,
+        activeProjects: overallSummary.activeProjects,
+        inactiveProjects: overallSummary.inactiveProjects,
+        totalLogsOverall: totalLogsAcrossProjects, // NEW: From LogModel
+        avgLogsPerProject: overallSummary.avgLogsPerProject,
+        maxLogsPerProject: overallSummary.maxLogs,
+        minLogsPerProject: overallSummary.minLogs,
+        // NEW FIELDS:
+        totalActiveErrorLogs: totalActiveErrorLogs, // Error logs from last hour
+        totalActiveProjects: totalActiveProjects, // Projects with activity in last 24h
+      },
+      recentProjects: recentProjects.map((project) => ({
+        ...project,
+        // Add computed fields
+        daysSinceCreated: Math.floor(
+          (Date.now() - new Date(project.createdAt ?? 0).getTime()) /
+            (1000 * 60 * 60 * 24)
+        ),
+      })),
+      topProjectsByLogs,
+      popularTags,
+      creationTrends: groupBy ? creationTrends : undefined,
+      metadata: {
+        userId: userId || null,
+        filters: {
+          includeInactive,
+          dateRange: startDate || endDate ? { startDate, endDate } : null,
+          groupBy,
+        },
+        generatedAt: new Date(),
+        ...performanceMetrics,
+      },
+    };
+  } catch (error: any) {
+    // Enhanced error handling with context
+    const errorContext = {
+      userId,
+      options,
+      timestamp: new Date(),
+    };
+
+    // Log the error with context (implement your logging strategy)
+    console.error("ProjectsSummary Error:", {
+      error: error.message,
+      context: errorContext,
+    });
+
+    // Re-throw custom errors or wrap generic ones
+    if (
+      error instanceof ProjectOperationError ||
+      error instanceof ProjectNotFoundError
+    ) {
+      throw error;
+    }
+
+    throw new ProjectOperationError(
+      `Failed to get projects summary: ${
+        error.message || error
+      } :: Context: ${JSON.stringify(errorContext)}`
+    );
   }
+}
 
   // Performance monitoring services
 

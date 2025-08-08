@@ -1,4 +1,5 @@
-import { LogLevel } from "../services/log.service"; // Adjust path if LogLevel is in a different shared file
+import { LogLevel } from "./log.dto";
+
 
 /**
  * DTO for querying dashboard insights.

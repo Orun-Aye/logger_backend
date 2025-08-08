@@ -350,3 +350,17 @@ export interface EnhancedProjectsSummaryData extends ProjectsSummaryData {
     }>;
   };
 }
+
+export interface timeRange {
+  start: Date;
+  end: Date
+}
+
+export interface DashboardFilters {
+  projectIds?: string[];
+  timeRange: timeRange;
+  environment?: string[];
+  logLevels?: string[];
+  eventTypes?: string[];
+  services?: string[];
+}

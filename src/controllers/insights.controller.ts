@@ -3,8 +3,8 @@ import {
   DashboardInsightsService,
   DashboardInsightsServiceError,
   ProjectNotFoundError,
-} from "../services/dashboardInsights.service";
-import { DashboardInsights, InsightsOptions } from "../types/app";
+} from "../services/insights.service";
+import { DashboardInsights } from "../types/app";
 import { GetInsightsDTO } from "../dtos/dashboard.dto";
 import { LogLevel } from "../dtos/log.dto";
 

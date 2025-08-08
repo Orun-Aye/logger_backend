@@ -6,6 +6,7 @@ import {
 } from "../dtos/log.dto";
 import { LogModel, ILog } from "../models/log.model"; // Import ILog for type safety
 import { Types, SortOrder } from "mongoose";
+import { globalServices } from "../server";
 
 // Custom error classes for better error handling
 export class LogNotFoundError extends Error {
@@ -30,7 +31,6 @@ export class LogValidationError extends Error {
     this.name = "LogValidationError";
   }
 }
-
 
 export class LogService {
   /**
@@ -105,20 +105,26 @@ export class LogService {
       let normalizedTimestamp: Date | undefined;
       if (data.timestamp !== undefined && data.timestamp !== null) {
         if (data.timestamp instanceof Date) {
-          normalizedTimestamp = data.timestamp
-        } else if (typeof data.timestamp === "string" || typeof data.timestamp === "number") {
-          const parsedDate = new Date(data.timestamp)
+          normalizedTimestamp = data.timestamp;
+        } else if (
+          typeof data.timestamp === "string" ||
+          typeof data.timestamp === "number"
+        ) {
+          const parsedDate = new Date(data.timestamp);
           // Check if parsing resulted in a valid date
           if (!isNaN(parsedDate.getTime())) {
-            normalizedTimestamp = parsedDate
+            normalizedTimestamp = parsedDate;
           } else {
             // If provided timestamp is invalid, log a warning and proceed without it
-            console.warn(`LogService: Invalid timestamo format provided: "${data.timestamp}". Using current timestamp`);
-
+            console.warn(
+              `LogService: Invalid timestamo format provided: "${data.timestamp}". Using current timestamp`
+            );
           }
         } else {
           // Handle cases where data.timestamp is neither Date, string, nor number
-          console.warn(`LogService: Unexpected type for timestamp: "${typeof data.timestamp}". Using current timestamp`)
+          console.warn(
+            `LogService: Unexpected type for timestamp: "${typeof data.timestamp}". Using current timestamp`
+          );
         }
       }
 
@@ -131,7 +137,9 @@ export class LogService {
         projectId: data.projectId,
         message: data.message,
         // Ensure timestamp is an ISO string for comparison as per schema
-        timestamp: normalizedTimestamp ? normalizedTimestamp.toISOString() : undefined,
+        timestamp: normalizedTimestamp
+          ? normalizedTimestamp.toISOString()
+          : undefined,
       });
 
       if (existingLog) {
@@ -150,6 +158,14 @@ export class LogService {
       };
 
       const newLog = await LogModel.create(newLogData);
+
+      if (globalServices.dashboardWebSocketService) {
+        globalServices.dashboardWebSocketService.broadcastToProject(
+          data.projectId,
+          "NEW_LOG",
+          { log: newLog.toObject() }
+        );
+      }
 
       // Return the lean object (plain JS object) for performance
       return newLog.toObject() as ILog;
@@ -341,7 +357,7 @@ export class LogService {
             $match: {
               ...baseMatch,
               level: LogLevel.ERROR,
-              "error.message": { $exists: true, $nin:[ null, ""] },
+              "error.message": { $exists: true, $nin: [null, ""] },
             },
           },
           {
