@@ -24,9 +24,9 @@ function verifyToken(req, res, next) {
         const token = req.headers.authorization;
         if (!token) {
             return res.status(401).json({
-                status: 'error',
-                code: 'UNAUTHORIZED',
-                message: 'No token provided'
+                status: "error",
+                code: "UNAUTHORIZED",
+                message: "No token provided",
             });
         }
         try {
@@ -35,9 +35,9 @@ function verifyToken(req, res, next) {
         }
         catch (error) {
             return res.status(401).json({
-                status: 'error',
-                code: 'INVALID_TOKEN',
-                message: 'Invalid or expired token'
+                status: "error",
+                code: "INVALID_TOKEN",
+                message: "Invalid or expired token",
             });
         }
         next();
@@ -45,20 +45,20 @@ function verifyToken(req, res, next) {
 }
 function authenticateApiKey(req, res, next) {
     return __awaiter(this, void 0, void 0, function* () {
-        const apiKey = req.headers['x-api-key'];
+        const apiKey = req.headers["x-api-key"];
         if (!apiKey) {
             return res.status(401).json({
-                status: 'error1',
-                code: 'UNAUTHORIZED',
-                message: 'API key is required'
+                status: "error1",
+                code: "UNAUTHORIZED",
+                message: "API key is required",
             });
         }
         const project = yield project_model_1.ProjectModel.findOne({ apiKey });
         if (!project) {
             return res.status(403).json({
-                status: 'error',
-                code: 'INVALID_API_KEY',
-                message: 'The provided API key is invalid.'
+                status: "error",
+                code: "INVALID_API_KEY",
+                message: "The provided API key is invalid.",
             });
         }
         req.projectId = project._id.toString(); // Also set it on the request object for convenience

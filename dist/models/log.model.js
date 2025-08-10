@@ -42,7 +42,7 @@ const LogSchema = new mongoose_1.Schema({
         index: true,
     },
     timestamp: {
-        type: String, // ISO 8601 string
+        type: String,
         required: true,
         default: () => new Date().toISOString(),
     },
@@ -62,6 +62,9 @@ const LogSchema = new mongoose_1.Schema({
         name: String,
         message: String,
         stack: String,
+        url: String,
+        lineNumber: Number,
+        columnNumber: Number,
     },
     service: {
         type: String,
@@ -77,7 +80,27 @@ const LogSchema = new mongoose_1.Schema({
     metadata: {
         type: mongoose_1.Schema.Types.Mixed,
     },
+    eventType: {
+        type: String,
+        enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview'],
+        index: true, // Good for filtering by event type
+    },
+    userAgent: {
+        type: String,
+    },
+    url: {
+        type: String,
+        index: true, // Good for filtering by URL
+    },
+    referrer: {
+        type: String,
+    },
 }, {
     timestamps: true, // adds createdAt and updatedAt
 });
+// ✅ ADDED - Additional indexes for better query performance
+LogSchema.index({ projectId: 1, timestamp: -1 }); // Common query pattern
+LogSchema.index({ projectId: 1, level: 1 }); // Filter by project and log level
+LogSchema.index({ projectId: 1, eventType: 1 }); // Filter by project and event type
+LogSchema.index({ url: 1, timestamp: -1 }); // URL-based queries with recency
 exports.LogModel = mongoose_1.default.model("Log", LogSchema);

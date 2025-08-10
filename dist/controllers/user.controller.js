@@ -19,24 +19,31 @@ class UserController {
             return res.status(400).json({
                 status: "error",
                 message: error.message,
-                errors: [error.message]
+                errors: [error.message],
             });
         }
         return res.status(500).json({
             status: "error",
             message: defaultMessage,
-            errors: [error.message]
+            errors: [error.message],
         });
     }
     static createUser(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const userData = req.body;
+                if (!userData) {
+                    return res.status(400).json({
+                        status: "error",
+                        message: "Missing credentials",
+                        data: null,
+                    });
+                }
                 const newUser = yield user_service_1.UserService.createUser(userData);
                 return res.status(201).json({
                     status: "success",
                     message: "User created successfully",
-                    data: newUser
+                    data: newUser,
                 });
             }
             catch (error) {
@@ -51,14 +58,14 @@ class UserController {
                 if (!email || !password) {
                     return res.status(400).json({
                         status: "error",
-                        message: "Email and password are required"
+                        message: "Email and password are required",
                     });
                 }
                 const user = yield user_service_1.UserService.loginUser({ email, password });
                 return res.status(200).json({
                     status: "success",
                     message: "User logged in successfully",
-                    data: user
+                    data: user,
                 });
             }
             catch (error) {

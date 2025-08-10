@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import cors from "cors";
 import { connectDB } from "./utils/db";
 import projectRoutes from "./routes/project.routes";
 import logRoutes from "./routes/log.routes";
@@ -15,33 +16,39 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const server = createServer(app)
-const JWT_SECRET = process.env.JWT_SECRET!
+const server = createServer(app);
+const JWT_SECRET = process.env.JWT_SECRET!;
 
-
-
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use(express.json());
 
 app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/", logRoutes);
-app.use('/api/v1/alerts', alertRuleRoutes);
-app.use('/api/v1/dashboard/', dashboardRoutes)
+app.use("/api/v1/alerts", alertRuleRoutes);
+app.use("/api/v1/dashboard/", dashboardRoutes);
 
-
-const dashboardWebSocketService = new DashboardWebSocketService(server, JWT_SECRET);
-
+const dashboardWebSocketService = new DashboardWebSocketService(
+  server,
+  JWT_SECRET
+);
 
 // Start the server
 const startServer = async () => {
   await connectDB(process.env.MONGODB_URI);
 
   server.listen(PORT, () => {
-  console.log(`WebSocket server is running on port ${PORT}`);
-})
+    console.log(`WebSocket server is running on port ${PORT}`);
+  });
 };
-
 
 startServer().catch((err) => {
   console.error("Failed to start server:", err);
@@ -51,5 +58,5 @@ startServer().catch((err) => {
 export const globalServices = {
   dashboardWebSocketService,
   logService: LogService,
-  dashboardService: DashboardService
-}
+  dashboardService: DashboardService,
+};

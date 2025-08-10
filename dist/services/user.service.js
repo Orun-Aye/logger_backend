@@ -64,7 +64,6 @@ class UserService {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 this.validateUserSignupData(data);
-                const hashedPassword = yield bcrypt_1.default.hash(data.password, 10); // Hash the password here if needed
                 // Check for existing user with the same email
                 const existingUser = yield user_model_1.UserModel.findOne({
                     email: data.email,
@@ -72,6 +71,8 @@ class UserService {
                 if (existingUser) {
                     throw new UserValidationError("User with this email already exists");
                 }
+                // Hash the password here if needed
+                const hashedPassword = yield bcrypt_1.default.hash(data.password, 10);
                 // Create a new user
                 const newUser = new user_model_1.UserModel({
                     email: data.email,

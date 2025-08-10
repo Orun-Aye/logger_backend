@@ -10,8 +10,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardInsightsController = void 0;
-const dashboardInsights_service_1 = require("../services/dashboardInsights.service");
-const log_service_1 = require("../services/log.service");
+const insights_service_1 = require("../services/insights.service");
+const log_dto_1 = require("../dtos/log.dto");
 /**
  * Controller class for handling dashboard insights API endpoints.
  * All methods are static to be used directly as Express route handlers.
@@ -27,13 +27,13 @@ class DashboardInsightsController {
      */
     static handleError(error, res, defaultMessage) {
         console.error(`DashboardInsightsController Error: ${error.message}`, error.stack);
-        if (error instanceof dashboardInsights_service_1.ProjectNotFoundError) {
+        if (error instanceof insights_service_1.ProjectNotFoundError) {
             return res.status(404).json({
                 status: "error",
                 message: error.message,
             });
         }
-        if (error instanceof dashboardInsights_service_1.DashboardInsightsServiceError) {
+        if (error instanceof insights_service_1.DashboardInsightsServiceError) {
             return res.status(400).json({
                 // Use 400 for service-level validation/business logic errors
                 status: "error",
@@ -76,7 +76,7 @@ class DashboardInsightsController {
             "6m",
             "1y",
         ];
-        const validSeverities = Object.values(log_service_1.LogLevel);
+        const validSeverities = Object.values(log_dto_1.LogLevel);
         // Validate range
         let validatedRange = "7d"; // Default
         if (typeof range === "string" && validRanges.includes(range)) {
@@ -130,7 +130,7 @@ class DashboardInsightsController {
                 // Validate and parse insights query paramters
                 const insightsOptions = DashboardInsightsController.validateInsightsQueryParams(req);
                 // Call the service method
-                const insights = yield dashboardInsights_service_1.DashboardInsightsService.getProjectInsights(projectId, insightsOptions);
+                const insights = yield insights_service_1.DashboardInsightsService.getProjectInsights(projectId, insightsOptions);
                 const endTime = process.hrtime.bigint();
                 const queryExecutionTime = Number(endTime - startTime) / 1000000; // Convert to ms
                 // Add controller-level metadata
@@ -169,7 +169,7 @@ class DashboardInsightsController {
                         message: "Project ID is required",
                     });
                 }
-                yield dashboardInsights_service_1.DashboardInsightsService.invalidateProjectCache(projectId);
+                yield insights_service_1.DashboardInsightsService.invalidateProjectCache(projectId);
                 return res.status(200).json({
                     status: "success",
                     message: `Cache for project ${projectId} invalidated successfully.`,
