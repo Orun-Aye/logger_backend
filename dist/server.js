@@ -42,7 +42,7 @@ app.use("/api/v1", user_routes_1.default);
 app.use("/api/v1/projects", project_routes_1.default);
 app.use("/api/v1/", log_routes_1.default);
 app.use("/api/v1/alerts", alertRule_routes_1.default);
-app.use("/api/v1/dashboard/", dashboard_routes_1.default);
+app.use("/api/v1/dashboard", dashboard_routes_1.default);
 const dashboardWebSocketService = new websocket_service_1.DashboardWebSocketService(server, JWT_SECRET);
 // Start the server
 const startServer = () => __awaiter(void 0, void 0, void 0, function* () {
