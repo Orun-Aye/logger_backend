@@ -75,6 +75,48 @@ export interface ProjectsSummaryData {
   };
 }
 
+export interface EnrichedProjectData {
+  _id: Types.ObjectId;
+  name: string;
+  description?: string;
+  ownerId: Types.ObjectId;
+  teamMembers: Array<{
+    user: Types.ObjectId;
+    role: string;
+  }>;
+  apiKey: string;
+  isActive: boolean;
+  logCount: number;
+  tags?: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  lastIngestedAt?: Date;
+
+  // Enhanced metrics
+  metrics: {
+    totalLogs: number;
+    totalErrorCount: number;
+    errorRate: number;
+    averageResponseTime: number;
+    healthScore: number;
+    recentActivity: {
+      logsLast24h: number;
+      errorsLast24h: number;
+      isActive: boolean;
+    };
+    performance: {
+      p95ResponseTime: number;
+      uptimePercentage: number;
+    };
+  };
+
+  // Trends indicators
+  trends: {
+    errorTrend: "increasing" | "decreasing" | "stable";
+    activityTrend: "increasing" | "decreasing" | "stable";
+    performanceTrend: "improving" | "degrading" | "stable";
+  };
+}
 
 export class ProjectService {
   // Input validation helper
@@ -249,6 +291,8 @@ export class ProjectService {
       sortOrder?: "asc" | "desc";
       searchBy?: "owner" | "teamMember" | "both";
       includeInactive?: boolean;
+      includeMetrics?: boolean;
+      metricsTimeRange?: number; // Default 7 days
     } = {}
   ) {
     try {
@@ -257,8 +301,10 @@ export class ProjectService {
         limit = 10,
         sortBy = "createdAt",
         sortOrder = "desc",
-        searchBy = "owner",
+        searchBy = "both",
         includeInactive = false,
+        includeMetrics = true,
+        metricsTimeRange = 168, // 7 days in hours
       } = options;
 
       const skip = (page - 1) * limit;
@@ -299,8 +345,438 @@ export class ProjectService {
         ProjectModel.countDocuments(queryCondition),
       ]);
 
+      if (!includeMetrics || projects.length === 0) {
+        return {
+          projects,
+          pagination: {
+            current: page,
+            total: Math.ceil(total / limit),
+            count: projects.length,
+            order: sortOrder,
+            totalRecords: total,
+          },
+        };
+      }
+
+      const projectIds = projects.map((p) => p._id.toString());
+      const metricsStartTime = new Date(
+        Date.now() - metricsTimeRange * 60 * 60 * 1000
+      );
+      const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [
+        logCounts,
+        errorCounts,
+        responseTimeMetrics,
+        recentActivityMetrics,
+        performanceMetrics,
+        trendMetrics,
+      ] = await Promise.all([
+        // Total log counts
+        LogModel.aggregate([
+          { $match: { projectId: { $in: projectIds } } },
+          { $group: { _id: "$projectId", count: { $sum: 1 } } },
+        ]),
+
+        // Error counts and rates
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: { $in: projectIds },
+              timestamp: { $gte: metricsStartTime.toISOString() },
+            },
+          },
+          {
+            $group: {
+              _id: "$projectId",
+              totalLogs: { $sum: 1 },
+              totalErrors: {
+                $sum: {
+                  $cond: [
+                    { $in: ["$level", ["error", "fatal", "warn"]] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              criticalErrors: {
+                $sum: {
+                  $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0],
+                },
+              },
+            },
+          },
+        ]),
+
+        // Response time metrics
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: { $in: projectIds },
+              timestamp: { $gte: metricsStartTime.toISOString() },
+              "data.responseTime": { $exists: true, $type: "number" },
+            },
+          },
+          {
+            $group: {
+              _id: "$projectId",
+              avgResponseTime: { $avg: "data.responseTime" },
+              responseTimes: { $push: "data.responseTime" },
+            },
+          },
+          {
+            $addFields: {
+              sortedTimes: {
+                $sortArray: { input: "$responseTimes", sortBy: 1 },
+              },
+            },
+          },
+          {
+            $project: {
+              projectId: "$_id",
+              avgResponseTime: {
+                $round: [{ $toDouble: "$avgResponseTime" }, 2],
+              },
+              p95ResponseTime: {
+                $arrayElemAt: [
+                  "$sortedTimes",
+                  { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.95] } },
+                ],
+              },
+              _id: 0,
+            },
+          },
+        ]),
+
+        // Recent activity (last 24 hours)
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: { $in: projectIds },
+              timestamp: { $gte: last24Hours.toISOString() },
+            },
+          },
+          {
+            $group: {
+              _id: "$projectId",
+              logsLast24h: { $sum: 1 },
+              errorsLast24h: {
+                $sum: {
+                  $cond: [
+                    { $in: ["$level", ["error", "fatal", "warn"]] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+
+        // Performance metrics (uptime calculation)
+        LogModel.aggregate([
+          { $match: { projectId: { $in: projectIds } } },
+          {
+            $group: {
+              _id: "$projectId",
+              firstLog: { $min: { $toDate: "$timestamp" } },
+              totalMinutes: {
+                $sum: {
+                  $divide: [
+                    {
+                      $subtract: [{ $toDate: "$timestamp" }, metricsStartTime],
+                    },
+                    60000, // Convert to minutes
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+
+        // Trend analysis (compare recent vs older periods)
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: { $in: projectIds },
+              timestamp: {
+                $gte: new Date(
+                  Date.now() - 14 * 24 * 60 * 60 * 1000
+                ).toISOString(),
+              },
+            },
+          },
+          {
+            $addFields: {
+              isRecent: {
+                $gte: [
+                  { $toDate: "$timestamp" },
+                  new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                ],
+              },
+            },
+          },
+          {
+            $group: {
+              _id: "$projectId",
+              recentLogs: { $sum: { $cond: ["$isRecent", 1, 0] } },
+              olderLogs: { $sum: { $cond: ["$isRecent", 0, 1] } },
+              recentErrors: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        "$isRecent",
+                        { $in: ["$level", ["error", "fatal"]] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              olderErrors: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $not: "$isRecent" },
+                        { $in: ["$level", ["error", "fatal"]] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              recentAvgResponseTime: {
+                $avg: {
+                  $cond: [
+                    { $and: ["$isRecent", { $type: "$data.responseTime" }] },
+                    "$data.responseTime",
+                    null,
+                  ],
+                },
+              },
+              olderAvgResponseTime: {
+                $avg: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $not: "$isRecent" },
+                        { $type: "$data.responseTime" },
+                      ],
+                    },
+                    "$data.responseTime",
+                    null,
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+      ]);
+
+      // Create lookup maps for quick access
+      const logCountMap = new Map(
+        logCounts.map((item) => [item._id, item.count])
+      );
+      const errorCountMap = new Map(
+        errorCounts.map((item) => [item._id, item])
+      );
+      const responseTimeMap = new Map(
+        responseTimeMetrics.map((item) => [item.projectId, item])
+      );
+      const recentActivityMap = new Map(
+        recentActivityMetrics.map((item) => [item._id, item])
+      );
+      const performanceMap = new Map(
+        performanceMetrics.map((item) => [item._id, item])
+      );
+      const trendMap = new Map(trendMetrics.map((item) => [item._id, item]));
+
+      const calculateHealthScore = (projectId: string): number => {
+        const errorData = errorCountMap.get(projectId) || {
+          totalLogs: 0,
+          totalErrors: 0,
+          criticalErrors: 0,
+        };
+        const recentActivity = recentActivityMap.get(projectId) || {
+          logsLast24h: 0,
+          errorsLast24h: 0,
+        };
+        const responseTime = responseTimeMap.get(projectId) || {
+          avgResponseTime: 0,
+        };
+
+        let score = 100;
+
+        // Error rate impact (0-40 points deduction)
+        if (errorData.totalLogs > 0) {
+          const errorRate = (errorData.totalErrors / errorData.totalLogs) * 100;
+          if (errorRate > 20) score -= 40;
+          else if (errorRate > 10) score -= 30;
+          else if (errorRate > 5) score -= 20;
+          else if (errorRate > 1) score -= 10;
+        }
+
+        // Response time impact (0-30 points deduction)
+        if (responseTime.avgResponseTime > 0) {
+          if (responseTime.avgResponseTime > 5000) score -= 30;
+          else if (responseTime.avgResponseTime > 3000) score -= 20;
+          else if (responseTime.avgResponseTime > 1000) score -= 10;
+        }
+
+        // Recent activity impact (0-30 points deduction)
+        if (recentActivity.logsLast24h === 0) score -= 30;
+        else if (recentActivity.logsLast24h < 10) score -= 15;
+
+        // Recent error rate impact
+        if (recentActivity.logsLast24h > 0) {
+          const recentErrorRate =
+            (recentActivity.errorsLast24h / recentActivity.logsLast24h) * 100;
+          if (recentErrorRate > 15) score -= 15;
+          else if (recentErrorRate > 10) score -= 10;
+          else if (recentErrorRate > 5) score -= 5;
+        }
+
+        return Math.max(0, Math.min(100, Math.round(score)));
+      };
+
+      // Helper function to calculate trends
+      const calculateTrends = (projectId: string) => {
+        const trends = trendMap.get(projectId);
+        if (!trends) {
+          return {
+            errorTrend: "stable" as const,
+            activityTrend: "stable" as const,
+            performanceTrend: "stable" as const,
+          };
+        }
+
+        const recentErrorRate =
+          trends.recentLogs > 0 ? trends.recentErrors / trends.recentLogs : 0;
+        const olderErrorRate =
+          trends.olderLogs > 0 ? trends.olderErrors / trends.olderLogs : 0;
+
+        let errorTrend: "increasing" | "decreasing" | "stable" = "stable";
+        if (recentErrorRate > olderErrorRate * 1.2) errorTrend = "increasing";
+        else if (recentErrorRate < olderErrorRate * 0.8)
+          errorTrend = "decreasing";
+
+        let activityTrend: "increasing" | "decreasing" | "stable" = "stable";
+        if (trends.recentLogs > trends.olderLogs * 1.2)
+          activityTrend = "increasing";
+        else if (trends.recentLogs < trends.olderLogs * 0.8)
+          activityTrend = "decreasing";
+
+        let performanceTrend: "improving" | "degrading" | "stable" = "stable";
+        if (trends.recentAvgResponseTime && trends.olderAvgResponseTime) {
+          if (trends.recentAvgResponseTime < trends.olderAvgResponseTime * 0.9)
+            performanceTrend = "improving";
+          else if (
+            trends.recentAvgResponseTime >
+            trends.olderAvgResponseTime * 1.1
+          )
+            performanceTrend = "degrading";
+        }
+
+        return { errorTrend, activityTrend, performanceTrend };
+      };
+
+      // Enrich projects with metrics
+      const enrichedProjects: EnrichedProjectData[] = projects.map(
+        (project) => {
+          const projectId = project._id.toString();
+          const errorData = errorCountMap.get(projectId) || {
+            totalLogs: 0,
+            totalErrors: 0,
+            criticalErrors: 0,
+          };
+          const responseTime = responseTimeMap.get(projectId) || {
+            avgResponseTime: 0,
+            p95ResponseTime: 0,
+          };
+          const recentActivity = recentActivityMap.get(projectId) || {
+            logsLast24h: 0,
+            errorsLast24h: 0,
+          };
+          const performance = performanceMap.get(projectId) || {
+            firstLog: null,
+            lastLog: null,
+          };
+          const trends = calculateTrends(projectId);
+
+          // Calculate uptime percentage
+          const now = Date.now();
+          const projectAge = now - new Date(project.createdAt).getTime();
+          const lastActivity = project.lastIngestedAt
+            ? now - new Date(project.lastIngestedAt).getTime()
+            : projectAge;
+          const uptimePercentage =
+            projectAge > 0
+              ? Math.max(
+                  0,
+                  Math.min(
+                    100,
+                    ((projectAge - lastActivity) / projectAge) * 100
+                  )
+                )
+              : 100;
+
+          const errorRate =
+            errorData.totalLogs > 0
+              ? (errorData.totalErrors / errorData.totalLogs) * 100
+              : 0;
+          const healthScore = calculateHealthScore(projectId);
+
+          return {
+            ...project,
+            metrics: {
+              totalLogs: logCountMap.get(projectId) || project.logCount || 0,
+              totalErrorCount: errorData.totalErrors,
+              errorRate: Math.round(errorRate * 100) / 100,
+              averageResponseTime: Math.round(
+                responseTime.avgResponseTime || 0
+              ),
+              healthScore,
+              recentActivity: {
+                logsLast24h: recentActivity.logsLast24h,
+                errorsLast24h: recentActivity.errorsLast24h,
+                isActive: recentActivity.logsLast24h > 0,
+              },
+              performance: {
+                p95ResponseTime: Math.round(responseTime.p95ResponseTime || 0),
+                uptimePercentage: Math.round(uptimePercentage * 100) / 100,
+              },
+            },
+            trends,
+          } as EnrichedProjectData;
+        }
+      );
+
+      // Calculate aggregated metrics
+      const aggregatedMetrics = {
+        totalProjects: projects.length,
+        totalLogs: enrichedProjects.reduce(
+          (sum, p) => sum + p.metrics.totalLogs,
+          0
+        ),
+        totalErrors: enrichedProjects.reduce(
+          (sum, p) => sum + p.metrics.totalErrorCount,
+          0
+        ),
+        averageHealthScore: Math.round(
+          enrichedProjects.reduce((sum, p) => sum + p.metrics.healthScore, 0) /
+            Math.max(1, projects.length)
+        ),
+        activeProjects: enrichedProjects.filter(
+          (p) => p.metrics.recentActivity.isActive
+        ).length,
+      };
+
       return {
-        projects,
+        projects: enrichedProjects,
         pagination: {
           current: page,
           total: Math.ceil(total / limit),
@@ -308,6 +784,7 @@ export class ProjectService {
           order: sortOrder,
           totalRecords: total,
         },
+        aggregatedMetrics,
       };
     } catch (error) {
       throw new Error(`Failed to fetch projects: ${error}`);
@@ -1529,287 +2006,288 @@ export class ProjectService {
   }
 
   static async getProjectsSummary(
-  userId?: string,
-  options: {
-    groupBy?: "day" | "week" | "month";
-    startDate?: Date;
-    endDate?: Date;
-    includeInactive?: boolean;
-    limit?: number;
-  } = {}
-): Promise<ProjectsSummaryData> {
-  try {
-    const {
-      groupBy = "day",
-      startDate,
-      endDate,
-      includeInactive = false,
-      limit = 5,
-    } = options;
+    userId?: string,
+    options: {
+      groupBy?: "day" | "week" | "month";
+      startDate?: Date;
+      endDate?: Date;
+      includeInactive?: boolean;
+      limit?: number;
+    } = {}
+  ): Promise<ProjectsSummaryData> {
+    try {
+      const {
+        groupBy = "day",
+        startDate,
+        endDate,
+        includeInactive = false,
+        limit = 5,
+      } = options;
 
-    // Base query to filter by user ownership/membership if userId is provided
-    const userFilter = userId
-      ? {
-          $or: [
-            { ownerId: new Types.ObjectId(userId) },
-            { "teamMembers.user": new Types.ObjectId(userId) },
-          ],
-        }
-      : {};
+      // Base query to filter by user ownership/membership if userId is provided
+      const userFilter = userId
+        ? {
+            $or: [
+              { ownerId: new Types.ObjectId(userId) },
+              { "teamMembers.user": new Types.ObjectId(userId) },
+            ],
+          }
+        : {};
 
-    // Date range filter for creation trends
-    const dateFilter: any = {};
-    if (startDate || endDate) {
-      dateFilter.createdAt = {};
-      if (startDate) dateFilter.createdAt.$gte = startDate;
-      if (endDate) dateFilter.createdAt.$lte = endDate;
-    }
+      // Date range filter for creation trends
+      const dateFilter: any = {};
+      if (startDate || endDate) {
+        dateFilter.createdAt = {};
+        if (startDate) dateFilter.createdAt.$gte = startDate;
+        if (endDate) dateFilter.createdAt.$lte = endDate;
+      }
 
-    // Active filter
-    const activeFilter = includeInactive ? {} : { isActive: true };
+      // Active filter
+      const activeFilter = includeInactive ? {} : { isActive: true };
 
-    // Get user's project IDs for log filtering
-    let userProjectIds: string[] = [];
-    if (userId || Object.keys(userFilter).length > 0) {
-      const userProjects = await ProjectModel.find(userFilter)
-        .select("_id")
-        .lean();
-      userProjectIds = userProjects.map((p) => p._id.toString());
-    }
+      // Get user's project IDs for log filtering
+      let userProjectIds: string[] = [];
+      if (userId || Object.keys(userFilter).length > 0) {
+        const userProjects = await ProjectModel.find(userFilter)
+          .select("_id")
+          .lean();
+        userProjectIds = userProjects.map((p) => p._id.toString());
+      }
 
-    // Build log match stage based on user's projects or all projects
-    const logMatchStage: any = {};
-    if (userProjectIds.length > 0) {
-      logMatchStage.projectId = { $in: userProjectIds };
-    }
+      // Build log match stage based on user's projects or all projects
+      const logMatchStage: any = {};
+      if (userProjectIds.length > 0) {
+        logMatchStage.projectId = { $in: userProjectIds };
+      }
 
-    // Time filter for recent error logs (last hour)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      // Time filter for recent error logs (last hour)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-    // All promises run concurrently
-    const [
-      totalProjectsCount,
-      activeProjectsCount,
-      recentProjects,
-      topProjectsByLogs,
-      popularTags,
-      overallStats,
-      creationTrends,
-      totalLogsAcrossProjects,
-      totalActiveErrorLogs,
-      totalActiveProjects,
-    ] = await Promise.all([
-      // 1. Total Projects Count (matching user filter)
-      ProjectModel.countDocuments(userFilter),
+      // All promises run concurrently
+      const [
+        totalProjectsCount,
+        activeProjectsCount,
+        recentProjects,
+        topProjectsByLogs,
+        popularTags,
+        overallStats,
+        creationTrends,
+        totalLogsAcrossProjects,
+        totalActiveErrorLogs,
+        totalActiveProjects,
+      ] = await Promise.all([
+        // 1. Total Projects Count (matching user filter)
+        ProjectModel.countDocuments(userFilter),
 
-      // 2. Active Projects Count (matching user filter)
-      ProjectModel.countDocuments({ ...userFilter, isActive: true }),
+        // 2. Active Projects Count (matching user filter)
+        ProjectModel.countDocuments({ ...userFilter, isActive: true }),
 
-      // 3. Recent Projects (active, sorted by last update)
-      ProjectModel.find({ ...userFilter, ...activeFilter })
-        .sort({ updatedAt: -1 })
-        .limit(limit)
-        .select("name logCount lastIngestedAt createdAt ownerId tags")
-        .populate("ownerId", "name email")
-        .lean(),
+        // 3. Recent Projects (active, sorted by last update)
+        ProjectModel.find({ ...userFilter, ...activeFilter })
+          .sort({ updatedAt: -1 })
+          .limit(limit)
+          .select("name logCount lastIngestedAt createdAt ownerId tags")
+          .populate("ownerId", "name email")
+          .lean(),
 
-      // 4. Top Projects by Log Count (active, sorted by logCount)
-      ProjectModel.find({ ...userFilter, ...activeFilter })
-        .sort({ logCount: -1 })
-        .limit(limit)
-        .select("name logCount createdAt")
-        .lean(),
+        // 4. Top Projects by Log Count (active, sorted by logCount)
+        ProjectModel.find({ ...userFilter, ...activeFilter })
+          .sort({ logCount: -1 })
+          .limit(limit)
+          .select("name logCount createdAt")
+          .lean(),
 
-      // 5. Popular Tags (active projects, matching user filter)
-      ProjectModel.aggregate([
-        { $match: { ...userFilter, ...activeFilter } },
-        { $unwind: { path: "$tags", preserveNullAndEmptyArrays: false } },
-        {
-          $group: {
-            _id: "$tags",
-            count: { $sum: 1 },
-            projectIds: { $addToSet: "$_id" }, // Track which projects use this tag
-          },
-        },
-        { $match: { _id: { $nin: [null, ""] } } }, // Exclude null/empty tags
-        { $sort: { count: -1 } },
-        { $limit: 10 },
-        {
-          $project: {
-            _id: 1,
-            count: 1,
-            projectCount: { $size: "$projectIds" }, // How many unique projects use this tag
-          },
-        },
-      ]),
-
-      // 6. Overall Stats with better error handling
-      ProjectModel.aggregate([
-        { $match: { ...userFilter } },
-        {
-          $group: {
-            _id: null,
-            totalProjects: { $sum: 1 },
-            activeProjects: { $sum: { $cond: ["$isActive", 1, 0] } },
-            totalLogs: { $sum: { $ifNull: ["$logCount", 0] } }, // Handle null logCount
-            avgLogsPerProject: { $avg: { $ifNull: ["$logCount", 0] } },
-            maxLogs: { $max: { $ifNull: ["$logCount", 0] } },
-            minLogs: { $min: { $ifNull: ["$logCount", 0] } },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            totalProjects: 1,
-            activeProjects: 1,
-            totalLogs: 1,
-            avgLogsPerProject: {
-              $round: [{ $ifNull: ["$avgLogsPerProject", 0] }, 1],
-            },
-            maxLogs: 1,
-            minLogs: 1,
-            inactiveProjects: {
-              $subtract: ["$totalProjects", "$activeProjects"],
+        // 5. Popular Tags (active projects, matching user filter)
+        ProjectModel.aggregate([
+          { $match: { ...userFilter, ...activeFilter } },
+          { $unwind: { path: "$tags", preserveNullAndEmptyArrays: false } },
+          {
+            $group: {
+              _id: "$tags",
+              count: { $sum: 1 },
+              projectIds: { $addToSet: "$_id" }, // Track which projects use this tag
             },
           },
-        },
-      ]),
+          { $match: { _id: { $nin: [null, ""] } } }, // Exclude null/empty tags
+          { $sort: { count: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              _id: 1,
+              count: 1,
+              projectCount: { $size: "$projectIds" }, // How many unique projects use this tag
+            },
+          },
+        ]),
 
-      // 7. Creation Trends (conditional based on groupBy parameter)
-      groupBy
-        ? ProjectModel.aggregate([
-            { $match: { ...userFilter, ...dateFilter } },
-            {
-              $group: {
-                _id: {
-                  $dateToString: {
-                    format:
-                      groupBy === "day"
-                        ? "%Y-%m-%d"
-                        : groupBy === "week"
-                        ? "%Y-%U"
-                        : "%Y-%m",
-                    date: "$createdAt",
-                  },
-                },
-                count: { $sum: 1 },
-                activeCount: { $sum: { $cond: ["$isActive", 1, 0] } },
+        // 6. Overall Stats with better error handling
+        ProjectModel.aggregate([
+          { $match: { ...userFilter } },
+          {
+            $group: {
+              _id: null,
+              totalProjects: { $sum: 1 },
+              activeProjects: { $sum: { $cond: ["$isActive", 1, 0] } },
+              totalLogs: { $sum: { $ifNull: ["$logCount", 0] } }, // Handle null logCount
+              avgLogsPerProject: { $avg: { $ifNull: ["$logCount", 0] } },
+              maxLogs: { $max: { $ifNull: ["$logCount", 0] } },
+              minLogs: { $min: { $ifNull: ["$logCount", 0] } },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              totalProjects: 1,
+              activeProjects: 1,
+              totalLogs: 1,
+              avgLogsPerProject: {
+                $round: [{ $ifNull: ["$avgLogsPerProject", 0] }, 1],
+              },
+              maxLogs: 1,
+              minLogs: 1,
+              inactiveProjects: {
+                $subtract: ["$totalProjects", "$activeProjects"],
               },
             },
-            { $sort: { _id: 1 } },
-            { $limit: 50 }, // Prevent excessive data
-          ])
-        : Promise.resolve([]),
+          },
+        ]),
 
-      // 8. NEW: Total logs across all projects (from LogModel)
-      LogModel.countDocuments(logMatchStage),
+        // 7. Creation Trends (conditional based on groupBy parameter)
+        groupBy
+          ? ProjectModel.aggregate([
+              { $match: { ...userFilter, ...dateFilter } },
+              {
+                $group: {
+                  _id: {
+                    $dateToString: {
+                      format:
+                        groupBy === "day"
+                          ? "%Y-%m-%d"
+                          : groupBy === "week"
+                          ? "%Y-%U"
+                          : "%Y-%m",
+                      date: "$createdAt",
+                    },
+                  },
+                  count: { $sum: 1 },
+                  activeCount: { $sum: { $cond: ["$isActive", 1, 0] } },
+                },
+              },
+              { $sort: { _id: 1 } },
+              { $limit: 50 }, // Prevent excessive data
+            ])
+          : Promise.resolve([]),
 
-      // 9. NEW: Total active error logs from the last hour
-      LogModel.countDocuments({
-        ...logMatchStage,
-        level: "error",
-        timestamp: {
-          $gte: oneHourAgo.toISOString(),
+        // 8. NEW: Total logs across all projects (from LogModel)
+        LogModel.countDocuments(logMatchStage),
+
+        // 9. NEW: Total active error logs from the last hour
+        LogModel.countDocuments({
+          ...logMatchStage,
+          level: "error",
+          timestamp: {
+            $gte: oneHourAgo.toISOString(),
+          },
+        }),
+
+        // 10. NEW: Total active projects (projects with recent activity in last 24 hours)
+        LogModel.distinct("projectId", {
+          ...logMatchStage,
+          timestamp: {
+            $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          },
+        }).then((projectIds) => {
+          // If user filter is applied, ensure the active projects belong to the user
+          if (userProjectIds.length > 0) {
+            return projectIds.filter((id) => userProjectIds.includes(id))
+              .length;
+          }
+          return projectIds.length;
+        }),
+      ]);
+
+      // Extract the single result from overallStats aggregation
+      const overallSummary = overallStats[0] || {
+        totalProjects: 0,
+        activeProjects: 0,
+        inactiveProjects: 0,
+        totalLogs: 0,
+        avgLogsPerProject: 0,
+        maxLogs: 0,
+        minLogs: 0,
+      };
+
+      // Add performance metrics
+      const performanceMetrics = {
+        responseTime: Date.now(), // You'd calculate this properly
+        cacheHit: false, // Implement caching logic
+        queryCount: 10, // Updated to reflect new queries
+      };
+
+      return {
+        summary: {
+          totalProjects: overallSummary.totalProjects,
+          activeProjects: overallSummary.activeProjects,
+          inactiveProjects: overallSummary.inactiveProjects,
+          totalLogsOverall: totalLogsAcrossProjects, // NEW: From LogModel
+          avgLogsPerProject: overallSummary.avgLogsPerProject,
+          maxLogsPerProject: overallSummary.maxLogs,
+          minLogsPerProject: overallSummary.minLogs,
+          // NEW FIELDS:
+          totalActiveErrorLogs: totalActiveErrorLogs, // Error logs from last hour
+          totalActiveProjects: totalActiveProjects, // Projects with activity in last 24h
         },
-      }),
-
-      // 10. NEW: Total active projects (projects with recent activity in last 24 hours)
-      LogModel.distinct("projectId", {
-        ...logMatchStage,
-        timestamp: {
-          $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        recentProjects: recentProjects.map((project) => ({
+          ...project,
+          // Add computed fields
+          daysSinceCreated: Math.floor(
+            (Date.now() - new Date(project.createdAt ?? 0).getTime()) /
+              (1000 * 60 * 60 * 24)
+          ),
+        })),
+        topProjectsByLogs,
+        popularTags,
+        creationTrends: groupBy ? creationTrends : undefined,
+        metadata: {
+          userId: userId || null,
+          filters: {
+            includeInactive,
+            dateRange: startDate || endDate ? { startDate, endDate } : null,
+            groupBy,
+          },
+          generatedAt: new Date(),
+          ...performanceMetrics,
         },
-      }).then((projectIds) => {
-        // If user filter is applied, ensure the active projects belong to the user
-        if (userProjectIds.length > 0) {
-          return projectIds.filter((id) => userProjectIds.includes(id)).length;
-        }
-        return projectIds.length;
-      }),
-    ]);
+      };
+    } catch (error: any) {
+      // Enhanced error handling with context
+      const errorContext = {
+        userId,
+        options,
+        timestamp: new Date(),
+      };
 
-    // Extract the single result from overallStats aggregation
-    const overallSummary = overallStats[0] || {
-      totalProjects: 0,
-      activeProjects: 0,
-      inactiveProjects: 0,
-      totalLogs: 0,
-      avgLogsPerProject: 0,
-      maxLogs: 0,
-      minLogs: 0,
-    };
+      // Log the error with context (implement your logging strategy)
+      console.error("ProjectsSummary Error:", {
+        error: error.message,
+        context: errorContext,
+      });
 
-    // Add performance metrics
-    const performanceMetrics = {
-      responseTime: Date.now(), // You'd calculate this properly
-      cacheHit: false, // Implement caching logic
-      queryCount: 10, // Updated to reflect new queries
-    };
+      // Re-throw custom errors or wrap generic ones
+      if (
+        error instanceof ProjectOperationError ||
+        error instanceof ProjectNotFoundError
+      ) {
+        throw error;
+      }
 
-    return {
-      summary: {
-        totalProjects: overallSummary.totalProjects,
-        activeProjects: overallSummary.activeProjects,
-        inactiveProjects: overallSummary.inactiveProjects,
-        totalLogsOverall: totalLogsAcrossProjects, // NEW: From LogModel
-        avgLogsPerProject: overallSummary.avgLogsPerProject,
-        maxLogsPerProject: overallSummary.maxLogs,
-        minLogsPerProject: overallSummary.minLogs,
-        // NEW FIELDS:
-        totalActiveErrorLogs: totalActiveErrorLogs, // Error logs from last hour
-        totalActiveProjects: totalActiveProjects, // Projects with activity in last 24h
-      },
-      recentProjects: recentProjects.map((project) => ({
-        ...project,
-        // Add computed fields
-        daysSinceCreated: Math.floor(
-          (Date.now() - new Date(project.createdAt ?? 0).getTime()) /
-            (1000 * 60 * 60 * 24)
-        ),
-      })),
-      topProjectsByLogs,
-      popularTags,
-      creationTrends: groupBy ? creationTrends : undefined,
-      metadata: {
-        userId: userId || null,
-        filters: {
-          includeInactive,
-          dateRange: startDate || endDate ? { startDate, endDate } : null,
-          groupBy,
-        },
-        generatedAt: new Date(),
-        ...performanceMetrics,
-      },
-    };
-  } catch (error: any) {
-    // Enhanced error handling with context
-    const errorContext = {
-      userId,
-      options,
-      timestamp: new Date(),
-    };
-
-    // Log the error with context (implement your logging strategy)
-    console.error("ProjectsSummary Error:", {
-      error: error.message,
-      context: errorContext,
-    });
-
-    // Re-throw custom errors or wrap generic ones
-    if (
-      error instanceof ProjectOperationError ||
-      error instanceof ProjectNotFoundError
-    ) {
-      throw error;
+      throw new ProjectOperationError(
+        `Failed to get projects summary: ${
+          error.message || error
+        } :: Context: ${JSON.stringify(errorContext)}`
+      );
     }
-
-    throw new ProjectOperationError(
-      `Failed to get projects summary: ${
-        error.message || error
-      } :: Context: ${JSON.stringify(errorContext)}`
-    );
   }
-}
 
   // Performance monitoring services
 

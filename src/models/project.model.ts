@@ -20,7 +20,7 @@ export interface IProject extends Document {
   };
   tags?: string[];
   lastIngestedAt?: Date;
-  createdAt?: Date;
+  createdAt: Date;
   updatedAt?: Date;
 }
 

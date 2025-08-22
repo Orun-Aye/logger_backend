@@ -34,7 +34,7 @@ app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/", logRoutes);
 app.use("/api/v1/alerts", alertRuleRoutes);
-app.use("/api/v1/dashboard/", dashboardRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 const dashboardWebSocketService = new DashboardWebSocketService(
   server,
