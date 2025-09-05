@@ -285,9 +285,6 @@ export class ProjectService {
   static async getProjectsByUser(
     userId: string,
     options: {
-      page?: number;
-      limit?: number;
-      sortBy?: string;
       sortOrder?: "asc" | "desc";
       searchBy?: "owner" | "teamMember" | "both";
       includeInactive?: boolean;
@@ -297,9 +294,6 @@ export class ProjectService {
   ) {
     try {
       const {
-        page = 1,
-        limit = 10,
-        sortBy = "createdAt",
         sortOrder = "desc",
         searchBy = "both",
         includeInactive = false,
@@ -307,10 +301,7 @@ export class ProjectService {
         metricsTimeRange = 168, // 7 days in hours
       } = options;
 
-      const skip = (page - 1) * limit;
-      const sort: { [key: string]: SortOrder } = {
-        [sortBy]: sortOrder === "desc" ? -1 : 1,
-      };
+      
 
       this.validateObjectId(userId);
       const userObjectId = new Types.ObjectId(userId);
@@ -338,9 +329,6 @@ export class ProjectService {
           .select("-__v")
           .populate("ownerId", "firstName lastName email")
           .populate("teamMembers.user", "firstName lastName email")
-          .sort(sort)
-          .skip(skip)
-          .limit(limit)
           .lean(),
         ProjectModel.countDocuments(queryCondition),
       ]);
@@ -349,8 +337,6 @@ export class ProjectService {
         return {
           projects,
           pagination: {
-            current: page,
-            total: Math.ceil(total / limit),
             count: projects.length,
             order: sortOrder,
             totalRecords: total,
@@ -414,14 +400,16 @@ export class ProjectService {
             $match: {
               projectId: { $in: projectIds },
               timestamp: { $gte: metricsStartTime.toISOString() },
-              "data.responseTime": { $exists: true, $type: "number" },
+              responseTime: { $exists: true, $type: "number", $gte: 0 },
             },
           },
           {
             $group: {
               _id: "$projectId",
-              avgResponseTime: { $avg: "data.responseTime" },
-              responseTimes: { $push: "data.responseTime" },
+              avgResponseTime: { $avg: "$responseTime" },
+              minResponseTime: { $min: "$responseTime" },
+              maxResponseTime: { $max: "$responseTime" },
+              responseTimes: { $push: "$responseTime" },
             },
           },
           {
@@ -437,10 +425,28 @@ export class ProjectService {
               avgResponseTime: {
                 $round: [{ $toDouble: "$avgResponseTime" }, 2],
               },
+              minResponseTime: {
+                $round: [{ $toDouble: "$minResponseTime" }, 2],
+              },
+              maxResponseTime: {
+                $round: [{ $toDouble: "$maxResponseTime" }, 2],
+              },
+              p50ResponseTime: {
+                $arrayElemAt: [
+                  "$sortedTimes",
+                  { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.5] } },
+                ],
+              },
               p95ResponseTime: {
                 $arrayElemAt: [
                   "$sortedTimes",
                   { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.95] } },
+                ],
+              },
+              p99ResponseTime: {
+                $arrayElemAt: [
+                  "$sortedTimes",
+                  { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.99] } },
                 ],
               },
               _id: 0,
@@ -552,8 +558,8 @@ export class ProjectService {
               recentAvgResponseTime: {
                 $avg: {
                   $cond: [
-                    { $and: ["$isRecent", { $type: "$data.responseTime" }] },
-                    "$data.responseTime",
+                    { $and: ["$isRecent", { $type: "$responseTime" }] },
+                    "$responseTime",
                     null,
                   ],
                 },
@@ -564,10 +570,10 @@ export class ProjectService {
                     {
                       $and: [
                         { $not: "$isRecent" },
-                        { $type: "$data.responseTime" },
+                        { $type: "$responseTime" },
                       ],
                     },
-                    "$data.responseTime",
+                    "$responseTime",
                     null,
                   ],
                 },
@@ -607,6 +613,11 @@ export class ProjectService {
         };
         const responseTime = responseTimeMap.get(projectId) || {
           avgResponseTime: 0,
+          minResponseTime: 0,
+          maxResponseTime: 0,
+          p50ResponseTime: 0,
+          p95ResponseTime: 0,
+          p99ResponseTime: 0,
         };
 
         let score = 100;
@@ -695,7 +706,11 @@ export class ProjectService {
           };
           const responseTime = responseTimeMap.get(projectId) || {
             avgResponseTime: 0,
+            minResponseTime: 0,
+            maxResponseTime: 0,
+            p50ResponseTime: 0,
             p95ResponseTime: 0,
+            p99ResponseTime: 0,
           };
           const recentActivity = recentActivityMap.get(projectId) || {
             logsLast24h: 0,
@@ -746,7 +761,11 @@ export class ProjectService {
                 isActive: recentActivity.logsLast24h > 0,
               },
               performance: {
+                minResponseTime: Math.round(responseTime.minResponseTime || 0),
+                maxResponseTime: Math.round(responseTime.maxResponseTime || 0),
+                p50ResponseTime: Math.round(responseTime.p50ResponseTime || 0),
                 p95ResponseTime: Math.round(responseTime.p95ResponseTime || 0),
+                p99ResponseTime: Math.round(responseTime.p99ResponseTime || 0),
                 uptimePercentage: Math.round(uptimePercentage * 100) / 100,
               },
             },
@@ -778,8 +797,6 @@ export class ProjectService {
       return {
         projects: enrichedProjects,
         pagination: {
-          current: page,
-          total: Math.ceil(total / limit),
           count: projects.length,
           order: sortOrder,
           totalRecords: total,
@@ -791,8 +808,23 @@ export class ProjectService {
     }
   }
 
-  static async getProjectById(id: string, populateRefs: boolean = false) {
+  static async getProjectById(
+    id: string, 
+    options: {
+      populateRefs?: boolean;
+      includeAnalytics?: boolean;
+      timeRange?: number; // hours, default 168 (7 days)
+      includeRecommendations?: boolean;
+    } = {}
+  ) {
     try {
+      const {
+        populateRefs = false,
+        includeAnalytics = true,
+        timeRange = 168, // 7 days
+        includeRecommendations = true,
+      } = options;
+
       this.validateObjectId(id);
 
       let query = ProjectModel.findById(id).select("-__v");
@@ -809,7 +841,500 @@ export class ProjectService {
         throw new ProjectNotFoundError(id);
       }
 
-      return project;
+      // If analytics are not requested, return basic project data
+      if (!includeAnalytics) {
+        return {
+          project,
+          analytics: null,
+          recommendations: null,
+        };
+      }
+
+      // Calculate time ranges
+      const now = new Date();
+      const startTime = new Date(now.getTime() - timeRange * 60 * 60 * 1000);
+      const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Comprehensive analytics queries
+      const [
+        // Basic metrics
+        totalLogs,
+        errorLogs,
+        recentLogs,
+        
+        // Response time analytics
+        responseTimeMetrics,
+        responseTimeTrends,
+        
+        // Error analysis
+        errorAnalysis,
+        topErrors,
+        
+        // Performance metrics
+        performanceMetrics,
+        uptimeAnalysis,
+        
+        // Usage patterns
+        usagePatterns,
+        serviceBreakdown,
+        environmentBreakdown,
+        
+        // Trend analysis
+        logTrends,
+        errorTrends,
+        performanceTrends,
+        
+        // Alert analysis
+        alertAnalysis,
+        
+        // Resource usage
+        resourceUsage,
+        
+        // Team activity
+        teamActivity,
+      ] = await Promise.all([
+        // Basic metrics
+        LogModel.countDocuments({ projectId: id }),
+        LogModel.countDocuments({ 
+          projectId: id, 
+          level: { $in: ["error", "fatal", "warn"] },
+          timestamp: { $gte: startTime.toISOString() }
+        }),
+        LogModel.countDocuments({ 
+          projectId: id, 
+          timestamp: { $gte: last24Hours.toISOString() }
+        }),
+
+        // Response time analytics
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() },
+              responseTime: { $exists: true, $type: "number", $gte: 0 }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              avgResponseTime: { $avg: "$responseTime" },
+              minResponseTime: { $min: "$responseTime" },
+              maxResponseTime: { $max: "$responseTime" },
+              responseTimeCount: { $sum: 1 }
+            }
+          }
+        ]),
+
+        // Response time trends (hourly)
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() },
+              responseTime: { $exists: true, $type: "number", $gte: 0 }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
+              },
+              avgResponseTime: { $avg: "$responseTime" },
+              requestCount: { $sum: 1 }
+            }
+          },
+          { $sort: { "_id.hour": 1 } }
+        ]),
+
+        // Error analysis
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() },
+              level: { $in: ["error", "fatal", "warn"] }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                level: "$level",
+                service: "$service",
+                environment: "$environment"
+              },
+              count: { $sum: 1 },
+              lastOccurrence: { $max: "$timestamp" },
+              avgResponseTime: { $avg: "$responseTime" }
+            }
+          },
+          { $sort: { count: -1 } }
+        ]),
+
+        // Top errors
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() },
+              level: "error",
+              "error.message": { $exists: true, $ne: null }
+            }
+          },
+          {
+            $group: {
+              _id: "$error.message",
+              count: { $sum: 1 },
+              lastSeen: { $max: "$timestamp" },
+              services: { $addToSet: "$service" },
+              environments: { $addToSet: "$environment" }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ]),
+
+        // Performance metrics
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              totalRequests: { $sum: 1 },
+              successfulRequests: {
+                $sum: { $cond: [{ $not: { $in: ["$level", ["error", "fatal"]] } }, 1, 0] }
+              },
+              errorRequests: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              },
+              avgResponseTime: { $avg: "$responseTime" },
+              slowestRequests: { $max: "$responseTime" },
+              fastestRequests: { $min: "$responseTime" }
+            }
+          }
+        ]),
+
+        // Uptime analysis
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                day: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
+              },
+              totalLogs: { $sum: 1 },
+              errorLogs: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              },
+              avgResponseTime: { $avg: "$responseTime" }
+            }
+          },
+          { $sort: { "_id.day": 1 } }
+        ]),
+
+        // Usage patterns
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                hour: { $hour: { $toDate: "$timestamp" } },
+                dayOfWeek: { $dayOfWeek: { $toDate: "$timestamp" } }
+              },
+              requestCount: { $sum: 1 },
+              avgResponseTime: { $avg: "$responseTime" },
+              errorCount: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { "_id.dayOfWeek": 1, "_id.hour": 1 } }
+        ]),
+
+        // Service breakdown
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: "$service",
+              requestCount: { $sum: 1 },
+              avgResponseTime: { $avg: "$responseTime" },
+              errorCount: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              },
+              lastActivity: { $max: "$timestamp" }
+            }
+          },
+          { $sort: { requestCount: -1 } }
+        ]),
+
+        // Environment breakdown
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: "$environment",
+              requestCount: { $sum: 1 },
+              avgResponseTime: { $avg: "$responseTime" },
+              errorCount: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { requestCount: -1 } }
+        ]),
+
+        // Log trends (daily)
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: last30Days.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                date: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
+              },
+              totalLogs: { $sum: 1 },
+              errorLogs: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              },
+              avgResponseTime: { $avg: "$responseTime" }
+            }
+          },
+          { $sort: { "_id.date": 1 } }
+        ]),
+
+        // Error trends (daily)
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: last30Days.toISOString() },
+              level: { $in: ["error", "fatal"] }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                date: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
+              },
+              errorCount: { $sum: 1 },
+              uniqueErrors: { $addToSet: "$error.message" }
+            }
+          },
+          {
+            $addFields: {
+              uniqueErrorCount: { $size: "$uniqueErrors" }
+            }
+          },
+          { $sort: { "_id.date": 1 } }
+        ]),
+
+        // Performance trends
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: last30Days.toISOString() },
+              responseTime: { $exists: true, $type: "number", $gte: 0 }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                date: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
+              },
+              avgResponseTime: { $avg: "$responseTime" },
+              requestCount: { $sum: 1 }
+            }
+          },
+          { $sort: { "_id.date": 1 } }
+        ]),
+
+        // Alert analysis
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() },
+              level: { $in: ["error", "fatal"] }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
+              },
+              errorCount: { $sum: 1 },
+              criticalErrors: {
+                $sum: { $cond: [{ $eq: ["$level", "fatal"] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { "_id.hour": -1 } },
+          { $limit: 24 }
+        ]),
+
+        // Resource usage
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
+              },
+              logVolume: { $sum: 1 },
+              avgResponseTime: { $avg: "$responseTime" },
+              errorRate: {
+                $avg: {
+                  $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0]
+                }
+              }
+            }
+          },
+          { $sort: { "_id.hour": 1 } }
+        ]),
+
+        // Team activity (if team members exist)
+        project.teamMembers && project.teamMembers.length > 0
+          ? LogModel.aggregate([
+              {
+                $match: {
+                  projectId: id,
+                  timestamp: { $gte: startTime.toISOString() }
+                }
+              },
+              {
+                $group: {
+                  _id: {
+                    day: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
+                  },
+                  totalActivity: { $sum: 1 },
+                  uniqueServices: { $addToSet: "$service" },
+                  avgResponseTime: { $avg: "$responseTime" }
+                }
+              },
+              {
+                $addFields: {
+                  serviceCount: { $size: "$uniqueServices" }
+                }
+              },
+              { $sort: { "_id.day": -1 } },
+              { $limit: 7 }
+            ])
+          : Promise.resolve([]),
+      ]);
+
+      // Process and structure the analytics data
+      const analytics = {
+        overview: {
+          totalLogs,
+          errorLogs,
+          recentLogs,
+          errorRate: totalLogs > 0 ? Math.round((errorLogs / totalLogs) * 10000) / 100 : 0,
+          timeRange: `${timeRange} hours`,
+          lastUpdated: new Date(),
+        },
+        responseTime: {
+          current: responseTimeMetrics[0] || {
+            avgResponseTime: 0,
+            minResponseTime: 0,
+            maxResponseTime: 0,
+            responseTimeCount: 0,
+          },
+          trends: responseTimeTrends,
+          health: ProjectService.calculateResponseTimeHealth(responseTimeMetrics[0]),
+        },
+        errors: {
+          analysis: errorAnalysis,
+          topErrors: topErrors,
+          trends: errorTrends,
+          health: ProjectService.calculateErrorHealth(errorAnalysis, totalLogs),
+        },
+        performance: {
+          metrics: performanceMetrics[0] || {
+            totalRequests: 0,
+            successfulRequests: 0,
+            errorRequests: 0,
+            avgResponseTime: 0,
+            slowestRequests: 0,
+            fastestRequests: 0,
+          },
+          uptime: uptimeAnalysis,
+          trends: performanceTrends,
+          health: ProjectService.calculatePerformanceHealth(performanceMetrics[0], uptimeAnalysis),
+        },
+        usage: {
+          patterns: usagePatterns,
+          serviceBreakdown: serviceBreakdown,
+          environmentBreakdown: environmentBreakdown,
+          insights: ProjectService.generateUsageInsights(usagePatterns, serviceBreakdown),
+        },
+        trends: {
+          logs: logTrends,
+          errors: errorTrends,
+          performance: performanceTrends,
+          analysis: ProjectService.analyzeTrends(logTrends, errorTrends, performanceTrends),
+        },
+        alerts: {
+          analysis: alertAnalysis,
+          recommendations: ProjectService.generateAlertRecommendations(alertAnalysis),
+        },
+        resources: {
+          usage: resourceUsage,
+          efficiency: ProjectService.calculateResourceEfficiency(resourceUsage),
+        },
+        team: {
+          activity: teamActivity,
+          insights: ProjectService.generateTeamInsights(teamActivity),
+        },
+      };
+
+      // Generate recommendations
+      const recommendations = includeRecommendations
+        ? ProjectService.generateProjectRecommendations(analytics, project)
+        : null;
+
+      return {
+        project,
+        analytics,
+        recommendations,
+        generatedAt: new Date(),
+      };
     } catch (error) {
       if (
         error instanceof ProjectNotFoundError ||
@@ -817,7 +1342,7 @@ export class ProjectService {
       ) {
         throw error;
       }
-      throw new Error(`Failed to fetch project: ${error}`);
+      throw new Error(`Failed to fetch project with analytics: ${error}`);
     }
   }
 
@@ -1530,36 +2055,7 @@ export class ProjectService {
     }
   }
 
-  // Bulk operations
-  static async bulkUpdateProjects(
-    projectIds: string[],
-    updateData: Partial<{
-      isActive: boolean;
-      tags: string[];
-      rateLimitConfig: { maxRequestsPerMinute: number; burstLimit: number };
-    }>
-  ) {
-    try {
-      projectIds.forEach((id) => this.validateObjectId(id));
-
-      const result = await ProjectModel.updateMany(
-        { _id: { $in: projectIds } },
-        {
-          ...updateData,
-          updatedAt: new Date(),
-        }
-      );
-
-      return {
-        matchedCount: result.matchedCount,
-        modifiedCount: result.modifiedCount,
-        updatedFields: Object.keys(updateData),
-      };
-    } catch (error) {
-      throw new Error(`Failed to bulk update projects: ${error}`);
-    }
-  }
-
+  
   static async getProjectsAnalytics(
     options: {
       startDate?: Date;
@@ -2708,8 +3204,8 @@ export class ProjectService {
                 avgResponseTime: {
                   $avg: {
                     $cond: [
-                      { $type: "$data.responseTime" },
-                      "$data.responseTime",
+                      { $type: "$responseTime" },
+                      "$responseTime",
                       null,
                     ],
                   },
@@ -2753,14 +3249,14 @@ export class ProjectService {
               $match: {
                 projectId,
                 timestamp: { $gte: startTime.toISOString() },
-                "data.responseTime": { $exists: true, $type: "number" },
+                responseTime: { $exists: true, $type: "number", $gte: 0 },
               },
             },
             {
               $group: {
                 _id: null,
-                responseTimes: { $push: "$data.responseTime" },
-                avgResponseTime: { $avg: "$data.responseTime" },
+                responseTimes: { $push: "$responseTime" },
+                avgResponseTime: { $avg: "$responseTime" },
               },
             },
             {
@@ -3090,7 +3586,7 @@ export class ProjectService {
           $gte: startDate.toISOString(),
           $lte: endDate.toISOString(),
         },
-        "data.responseTime": { $exists: true, $type: "number" },
+        responseTime: { $exists: true, $type: "number", $gte: 0 },
       };
 
       if (projectId) {
@@ -3126,8 +3622,8 @@ export class ProjectService {
                   date: { $toDate: "$timestamp" },
                 },
               },
-              responseTimes: { $push: "$data.responseTime" },
-              avgResponseTime: { $avg: "$data.responseTime" },
+              responseTimes: { $push: "$responseTime" },
+              avgResponseTime: { $avg: "$responseTime" },
               requestCount: { $sum: 1 },
             },
           },
@@ -3173,10 +3669,10 @@ export class ProjectService {
           {
             $group: {
               _id: null,
-              overallAvg: { $avg: "$data.responseTime" },
-              bestTime: { $min: "$data.responseTime" },
-              worstTime: { $max: "$data.responseTime" },
-              responseTimes: { $push: "$data.responseTime" },
+              overallAvg: { $avg: "$responseTime" },
+              bestTime: { $min: "$responseTime" },
+              worstTime: { $max: "$responseTime" },
+              responseTimes: { $push: "$responseTime" },
             },
           },
         ]),
@@ -3464,8 +3960,8 @@ export class ProjectService {
             responseTimes: {
               $push: {
                 $cond: [
-                  { $type: "$data.responseTime" },
-                  "$data.responseTime",
+                  { $type: "$responseTime" },
+                  "$responseTime",
                   null,
                 ],
               },
@@ -3480,8 +3976,8 @@ export class ProjectService {
                 },
                 responseTime: {
                   $cond: [
-                    { $type: "$data.responseTime" },
-                    "$data.responseTime",
+                    { $type: "$responseTime" },
+                    "$responseTime",
                     null,
                   ],
                 },
@@ -4011,13 +4507,13 @@ export class ProjectService {
           $match: {
             projectId,
             timestamp: { $gte: startTime.toISOString() },
-            "data.responseTime": { $exists: true, $type: "number" },
+            responseTime: { $exists: true, $type: "number", $gte: 0 },
           },
         },
         {
           $group: {
             _id: null,
-            avgResponseTime: { $avg: "$data.responseTime" },
+            avgResponseTime: { $avg: "$responseTime" },
           },
         },
       ]);
@@ -4079,5 +4575,280 @@ export class ProjectService {
       console.warn("Failed to generate project alerts:", error);
       return [];
     }
+  }
+
+  // Helper methods for analytics processing
+  private static calculateResponseTimeHealth(responseTimeData: any): string {
+    if (!responseTimeData || !responseTimeData.avgResponseTime) return "unknown";
+    
+    const avgResponseTime = responseTimeData.avgResponseTime;
+    if (avgResponseTime < 200) return "excellent";
+    if (avgResponseTime < 500) return "good";
+    if (avgResponseTime < 1000) return "fair";
+    if (avgResponseTime < 3000) return "poor";
+    return "critical";
+  }
+
+  private static calculateErrorHealth(errorAnalysis: any[], totalLogs: number): string {
+    if (!errorAnalysis || errorAnalysis.length === 0) return "excellent";
+    
+    const totalErrors = errorAnalysis.reduce((sum, error) => sum + error.count, 0);
+    const errorRate = totalLogs > 0 ? (totalErrors / totalLogs) * 100 : 0;
+    
+    if (errorRate < 1) return "excellent";
+    if (errorRate < 3) return "good";
+    if (errorRate < 5) return "fair";
+    if (errorRate < 10) return "poor";
+    return "critical";
+  }
+
+  private static calculatePerformanceHealth(performanceData: any, uptimeData: any[]): string {
+    if (!performanceData) return "unknown";
+    
+    const successRate = performanceData.totalRequests > 0 
+      ? (performanceData.successfulRequests / performanceData.totalRequests) * 100 
+      : 0;
+    
+    if (successRate >= 99.9) return "excellent";
+    if (successRate >= 99) return "good";
+    if (successRate >= 95) return "fair";
+    if (successRate >= 90) return "poor";
+    return "critical";
+  }
+
+  private static generateUsageInsights(usagePatterns: any[], serviceBreakdown: any[]): string[] {
+    const insights: string[] = [];
+    
+    // Peak usage hours analysis
+    if (usagePatterns.length > 0) {
+      const peakHour = usagePatterns.reduce((max, current) => 
+        current.requestCount > max.requestCount ? current : max
+      );
+      insights.push(`Peak usage occurs at hour ${peakHour._id.hour} on day ${peakHour._id.dayOfWeek}`);
+    }
+    
+    // Service distribution analysis
+    if (serviceBreakdown.length > 0) {
+      const topService = serviceBreakdown[0];
+      const totalRequests = serviceBreakdown.reduce((sum, service) => sum + service.requestCount, 0);
+      const topServicePercentage = totalRequests > 0
+        ? Math.round((topService.requestCount / totalRequests) * 100)
+        : 0;
+      insights.push(`${topService._id} service handles ${topServicePercentage}% of all requests`);
+    }
+    
+    return insights;
+  }
+
+  private static analyzeTrends(logTrends: any[], errorTrends: any[], performanceTrends: any[]): any {
+    const analysis = {
+      logVolumeTrend: "stable",
+      errorTrend: "stable", 
+      performanceTrend: "stable",
+      insights: [] as string[]
+    };
+    
+    // Analyze log volume trend
+    if (logTrends.length >= 2) {
+      const recent = logTrends.slice(-7); // Last 7 days
+      const older = logTrends.slice(-14, -7); // Previous 7 days
+      
+      const recentAvg = recent.reduce((sum, day) => sum + day.totalLogs, 0) / recent.length;
+      const olderAvg = older.reduce((sum, day) => sum + day.totalLogs, 0) / older.length;
+      
+      const change = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0;
+      
+      if (change > 20) analysis.logVolumeTrend = "increasing";
+      else if (change < -20) analysis.logVolumeTrend = "decreasing";
+      
+      analysis.insights.push(`Log volume has ${analysis.logVolumeTrend} trend (${change.toFixed(1)}% change)`);
+    }
+    
+    // Analyze error trend
+    if (errorTrends.length >= 2) {
+      const recent = errorTrends.slice(-7);
+      const older = errorTrends.slice(-14, -7);
+      
+      const recentAvg = recent.reduce((sum, day) => sum + day.errorCount, 0) / recent.length;
+      const olderAvg = older.reduce((sum, day) => sum + day.errorCount, 0) / older.length;
+      
+      const change = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0;
+      
+      if (change > 20) analysis.errorTrend = "increasing";
+      else if (change < -20) analysis.errorTrend = "decreasing";
+      
+      analysis.insights.push(`Error count has ${analysis.errorTrend} trend (${change.toFixed(1)}% change)`);
+    }
+    
+    return analysis;
+  }
+
+  private static generateAlertRecommendations(alertAnalysis: any[]): string[] {
+    const recommendations: string[] = [];
+    
+    if (alertAnalysis.length === 0) {
+      recommendations.push("No critical errors detected in the last 24 hours");
+      return recommendations;
+    }
+    
+    const totalErrors = alertAnalysis.reduce((sum, hour) => sum + hour.errorCount, 0);
+    const criticalErrors = alertAnalysis.reduce((sum, hour) => sum + hour.criticalErrors, 0);
+    
+    if (criticalErrors > 0) {
+      recommendations.push(`Immediate attention required: ${criticalErrors} critical errors detected`);
+    }
+    
+    if (totalErrors > 50) {
+      recommendations.push("High error volume detected - consider implementing error rate monitoring");
+    }
+    
+    // Find peak error hours
+    const peakErrorHour = alertAnalysis.reduce((max, current) => 
+      current.errorCount > max.errorCount ? current : max
+    );
+    
+    if (peakErrorHour.errorCount > 10) {
+      recommendations.push(`Peak error time: ${peakErrorHour._id.hour} (${peakErrorHour.errorCount} errors)`);
+    }
+    
+    return recommendations;
+  }
+
+  private static calculateResourceEfficiency(resourceUsage: any[]): any {
+    if (resourceUsage.length === 0) {
+      return { efficiency: "unknown", insights: [] };
+    }
+    
+    const totalLogs = resourceUsage.reduce((sum, hour) => sum + hour.logVolume, 0);
+    const avgResponseTime = resourceUsage.reduce((sum, hour) => sum + (hour.avgResponseTime || 0), 0) / resourceUsage.length;
+    const avgErrorRate = resourceUsage.reduce((sum, hour) => sum + (hour.errorRate || 0), 0) / resourceUsage.length;
+    
+    let efficiency = "good";
+    const insights: string[] = [];
+    
+    if (avgResponseTime > 2000) {
+      efficiency = "poor";
+      insights.push("High average response time indicates potential performance issues");
+    }
+    
+    if (avgErrorRate > 0.05) {
+      efficiency = "poor";
+      insights.push("High error rate suggests system instability");
+    }
+    
+    if (totalLogs > 10000) {
+      insights.push("High log volume - consider log retention policies");
+    }
+    
+    return { efficiency, insights, totalLogs, avgResponseTime, avgErrorRate };
+  }
+
+  private static generateTeamInsights(teamActivity: any[]): string[] {
+    const insights: string[] = [];
+    
+    if (teamActivity.length === 0) {
+      insights.push("No recent team activity detected");
+      return insights;
+    }
+    
+    const totalActivity = teamActivity.reduce((sum, day) => sum + day.totalActivity, 0);
+    const avgActivity = totalActivity / teamActivity.length;
+    
+    insights.push(`Average daily activity: ${Math.round(avgActivity)} logs`);
+    
+    const mostActiveDay = teamActivity.reduce((max, day) => 
+      day.totalActivity > max.totalActivity ? day : max
+    );
+    
+    insights.push(`Most active day: ${mostActiveDay._id.day} (${mostActiveDay.totalActivity} logs)`);
+    
+    return insights;
+  }
+
+  private static generateProjectRecommendations(analytics: any, project: any): any {
+    const recommendations = {
+      priority: "medium" as "low" | "medium" | "high" | "critical",
+      categories: {
+        performance: [] as string[],
+        reliability: [] as string[],
+        optimization: [] as string[],
+        monitoring: [] as string[],
+        security: [] as string[]
+      },
+      actionItems: [] as string[],
+      healthScore: 0
+    };
+    
+    let healthScore = 100;
+    
+    // Performance recommendations
+    if (analytics.responseTime.health === "critical" || analytics.responseTime.health === "poor") {
+      recommendations.categories.performance.push("Consider optimizing database queries and API endpoints");
+      recommendations.categories.performance.push("Implement caching strategies to reduce response times");
+      recommendations.actionItems.push("Review and optimize slow-performing services");
+      healthScore -= 20;
+    }
+    
+    if (analytics.performance.health === "critical" || analytics.performance.health === "poor") {
+      recommendations.categories.performance.push("Implement load balancing and horizontal scaling");
+      recommendations.categories.performance.push("Add performance monitoring and alerting");
+      healthScore -= 15;
+    }
+    
+    // Reliability recommendations
+    if (analytics.errors.health === "critical" || analytics.errors.health === "poor") {
+      recommendations.categories.reliability.push("Implement comprehensive error handling and recovery mechanisms");
+      recommendations.categories.reliability.push("Add automated testing and monitoring for critical paths");
+      recommendations.actionItems.push("Address top recurring errors immediately");
+      healthScore -= 25;
+    }
+    
+    if (analytics.overview.errorRate > 5) {
+      recommendations.categories.reliability.push("Set up error rate monitoring and alerting");
+      recommendations.categories.reliability.push("Implement circuit breakers for external dependencies");
+      healthScore -= 10;
+    }
+    
+    // Optimization recommendations
+    if (analytics.resources.efficiency === "poor") {
+      recommendations.categories.optimization.push("Review and optimize resource usage patterns");
+      recommendations.categories.optimization.push("Implement log retention policies to manage storage");
+      healthScore -= 10;
+    }
+    
+    if (analytics.usage.insights.length > 0) {
+      recommendations.categories.optimization.push("Consider scaling resources during peak usage hours");
+    }
+    
+    // Monitoring recommendations
+    recommendations.categories.monitoring.push("Set up comprehensive monitoring dashboards");
+    recommendations.categories.monitoring.push("Implement automated alerting for critical metrics");
+    
+    if (analytics.trends.analysis.errorTrend === "increasing") {
+      recommendations.categories.monitoring.push("Monitor error trends closely and set up trend-based alerts");
+      healthScore -= 5;
+    }
+    
+    // Security recommendations
+    if (analytics.overview.errorRate > 10) {
+      recommendations.categories.security.push("Review error patterns for potential security issues");
+    }
+    
+    recommendations.categories.security.push("Implement proper logging and monitoring for security events");
+    
+    // Determine priority
+    if (healthScore < 50) {
+      recommendations.priority = "critical";
+    } else if (healthScore < 70) {
+      recommendations.priority = "high";
+    } else if (healthScore < 85) {
+      recommendations.priority = "medium";
+    } else {
+      recommendations.priority = "low";
+    }
+    
+    recommendations.healthScore = Math.max(0, healthScore);
+    
+    return recommendations;
   }
 }

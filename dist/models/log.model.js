@@ -95,6 +95,20 @@ const LogSchema = new mongoose_1.Schema({
     referrer: {
         type: String,
     },
+    ingestionStartTime: {
+        type: Date,
+    },
+    ingestionEndTime: {
+        type: Date,
+    },
+    responseTime: {
+        type: Number,
+        min: 0,
+    },
+    ingestionSuccess: {
+        type: Boolean,
+        default: true,
+    },
 }, {
     timestamps: true, // adds createdAt and updatedAt
 });
@@ -103,4 +117,6 @@ LogSchema.index({ projectId: 1, timestamp: -1 }); // Common query pattern
 LogSchema.index({ projectId: 1, level: 1 }); // Filter by project and log level
 LogSchema.index({ projectId: 1, eventType: 1 }); // Filter by project and event type
 LogSchema.index({ url: 1, timestamp: -1 }); // URL-based queries with recency
+LogSchema.index({ projectId: 1, responseTime: 1 }); // For response time queries
+LogSchema.index({ projectId: 1, ingestionEndTime: -1 }); // For recent response time analysis
 exports.LogModel = mongoose_1.default.model("Log", LogSchema);

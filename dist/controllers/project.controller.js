@@ -173,11 +173,8 @@ class ProjectController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const id = req.userId;
-                const { page, limit, sortBy, sortOrder, searchBy, includeInactive } = ProjectController.validatePaginationParams(req);
+                const { sortOrder, searchBy, includeInactive } = ProjectController.validatePaginationParams(req);
                 const result = yield project_service_1.ProjectService.getProjectsByUser(id, {
-                    page,
-                    limit,
-                    sortBy,
                     sortOrder,
                     searchBy,
                     includeInactive,
@@ -209,7 +206,16 @@ class ProjectController {
             try {
                 const { id } = req.params;
                 const populateRefs = req.query.populateRefs === "true";
-                const project = yield project_service_1.ProjectService.getProjectById(id, populateRefs);
+                const includeAnalytics = req.query.includeAnalytics === "true";
+                const timeRange = parseInt(req.query.timeRange) || 168;
+                const includeRecommendations = req.query.includeRecommendations === "true";
+                const options = {
+                    populateRefs,
+                    includeAnalytics,
+                    timeRange,
+                    includeRecommendations,
+                };
+                const project = yield project_service_1.ProjectService.getProjectById(id, options);
                 return res.status(200).json({
                     status: "success",
                     message: "Project fetched successfully",

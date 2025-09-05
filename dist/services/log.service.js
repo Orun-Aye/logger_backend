@@ -104,6 +104,7 @@ class LogService {
      */
     static createLog(data) {
         return __awaiter(this, void 0, void 0, function* () {
+            const ingestionStartTime = new Date();
             try {
                 this.validateObjectId(data.projectId); // Validate projectId
                 let normalizedTimestamp;
@@ -120,7 +121,7 @@ class LogService {
                         }
                         else {
                             // If provided timestamp is invalid, log a warning and proceed without it
-                            console.warn(`LogService: Invalid timestamo format provided: "${data.timestamp}". Using current timestamp`);
+                            console.warn(`LogService: Invalid timestamp format provided: "${data.timestamp}". Using current timestamp`);
                         }
                     }
                     else {
@@ -144,10 +145,14 @@ class LogService {
                 if (existingLog) {
                     throw new LogServiceError("Log entry with the same project, message, and timestamp already exists. Consider if this is the desired behavior for log deduplication.", { logData: data, existingLogId: existingLog._id });
                 }
+                const ingestionEndTime = new Date();
+                const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
                 // Prepare log data, ensuring timestamp is an ISO string
                 const newLogData = Object.assign(Object.assign({}, data), { timestamp: normalizedTimestamp
                         ? normalizedTimestamp.toISOString()
-                        : new Date().toISOString() });
+                        : new Date().toISOString(), ingestionStartTime,
+                    ingestionEndTime,
+                    responseTime, ingestionSuccess: true });
                 const newLog = yield log_model_1.LogModel.create(newLogData);
                 if (server_1.globalServices.dashboardWebSocketService) {
                     server_1.globalServices.dashboardWebSocketService.broadcastToProject(data.projectId, "NEW_LOG", { log: newLog.toObject() });
@@ -156,6 +161,29 @@ class LogService {
                 return newLog.toObject();
             }
             catch (error) {
+                const ingestionEndTime = new Date();
+                const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+                try {
+                    yield log_model_1.LogModel.create({
+                        projectId: data.projectId,
+                        timestamp: new Date().toISOString(),
+                        level: 'error',
+                        message: 'Failed log ingestion',
+                        error: {
+                            name: error instanceof Error ? error.constructor.name : 'UnknownError',
+                            message: error instanceof Error ? error.message : 'Unknown error occurred',
+                        },
+                        eventType: 'error',
+                        ingestionStartTime,
+                        ingestionEndTime,
+                        responseTime,
+                        ingestionSuccess: false,
+                        data: { originalLogData: data }
+                    });
+                }
+                catch (metricError) {
+                    console.error('Failed to record ingestion failure metric:', metricError);
+                }
                 if (error instanceof LogValidationError ||
                     error instanceof LogServiceError) {
                     throw error; // Re-throw custom errors directly

@@ -225,13 +225,10 @@ export class ProjectController {
   static async getByUser(req: Request, res: Response): Promise<Response> {
     try {
       const id = req.userId;
-      const { page, limit, sortBy, sortOrder, searchBy, includeInactive } =
+      const { sortOrder, searchBy, includeInactive } =
         ProjectController.validatePaginationParams(req);
 
       const result = await ProjectService.getProjectsByUser(id, {
-        page,
-        limit,
-        sortBy,
         sortOrder,
         searchBy,
         includeInactive,
@@ -266,7 +263,18 @@ export class ProjectController {
     try {
       const { id } = req.params;
       const populateRefs = req.query.populateRefs === "true";
-      const project = await ProjectService.getProjectById(id, populateRefs);
+      const includeAnalytics = req.query.includeAnalytics === "true";
+      const timeRange = parseInt(req.query.timeRange as string) || 168;
+      const includeRecommendations = req.query.includeRecommendations === "true";
+
+      const options = {
+        populateRefs,
+        includeAnalytics,
+        timeRange,
+        includeRecommendations,
+      };
+
+      const project = await ProjectService.getProjectById(id, options);
 
       return res.status(200).json({
         status: "success",

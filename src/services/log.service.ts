@@ -99,6 +99,7 @@ export class LogService {
    * @throws LogServiceError if a duplicate log exists or other creation fails.
    */
   static async createLog(data: CreateLogDTO): Promise<ILog> {
+    const ingestionStartTime = new Date();
     try {
       this.validateObjectId(data.projectId); // Validate projectId
 
@@ -117,7 +118,7 @@ export class LogService {
           } else {
             // If provided timestamp is invalid, log a warning and proceed without it
             console.warn(
-              `LogService: Invalid timestamo format provided: "${data.timestamp}". Using current timestamp`
+              `LogService: Invalid timestamp format provided: "${data.timestamp}". Using current timestamp`
             );
           }
         } else {
@@ -149,12 +150,19 @@ export class LogService {
         );
       }
 
+      const ingestionEndTime = new Date();
+      const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+
       // Prepare log data, ensuring timestamp is an ISO string
       const newLogData: Partial<ILog> = {
         ...data,
         timestamp: normalizedTimestamp
           ? normalizedTimestamp.toISOString()
           : new Date().toISOString(),
+        ingestionStartTime,
+        ingestionEndTime,
+        responseTime,
+        ingestionSuccess: true,
       };
 
       const newLog = await LogModel.create(newLogData);
@@ -170,6 +178,30 @@ export class LogService {
       // Return the lean object (plain JS object) for performance
       return newLog.toObject() as ILog;
     } catch (error) {
+      const ingestionEndTime = new Date();
+      const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+
+      try {
+        await LogModel.create({
+          projectId: data.projectId,
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: 'Failed log ingestion',
+          error: {
+            name: error instanceof Error ? error.constructor.name : 'UnknownError',
+            message: error instanceof Error ? error.message : 'Unknown error occurred',
+          },
+          eventType: 'error',
+          ingestionStartTime,
+          ingestionEndTime,
+          responseTime,
+          ingestionSuccess: false,
+          data: { originalLogData: data }
+        });
+      } catch (metricError) {
+        console.error('Failed to record ingestion failure metric:', metricError);
+      }
+      
       if (
         error instanceof LogValidationError ||
         error instanceof LogServiceError

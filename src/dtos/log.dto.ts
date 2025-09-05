@@ -1,6 +1,5 @@
 // src/dtos/log.dto.ts
 
-
 // Defining DTOs and Enums here for completeness and clarity,
 // assuming they are also defined in a separate log.dto.ts file.
 // If they are strictly in log.dto.ts, these can be removed from here.
@@ -77,7 +76,6 @@ export interface FilterLogsDTO {
   sortOrder?: "asc" | "desc";
 }
 
-
 export interface LogSummaryData {
   totalLogs: number;
   byLevel: Record<LogLevel, number>;
@@ -104,7 +102,6 @@ export interface LogSummaryData {
   };
 }
 
-
 export type LogSortByField =
   | "timestamp"
   | "level"
@@ -114,3 +111,14 @@ export type LogSortByField =
   | "updatedAt"
   | "eventType"
   | "url";
+
+export interface ResponseTimeMetrics {
+  averageResponseTime: number;
+  minResponseTime: number;
+  maxResponseTime: number;
+  totalRequests: number;
+  successRate: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
