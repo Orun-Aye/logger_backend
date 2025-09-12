@@ -6,7 +6,7 @@
     "build": "tsc --build",
     "start": "node ./dist/server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096 -r ts-node/register\" ./src/server.ts",
-    "test": "jest"
+    "test": "jest --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -43,6 +43,7 @@
     "@types/ws": "^8.18.1",
     "nanoid": "^5.1.5",
     "nodemon": "^3.1.10",
+    "supertest": "^7.0.0",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",

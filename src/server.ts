@@ -60,3 +60,6 @@ export const globalServices = {
   logService: LogService,
   dashboardService: DashboardService,
 };
+
+
+export default app;

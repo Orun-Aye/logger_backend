@@ -60,3 +60,4 @@ exports.globalServices = {
     logService: log_service_1.LogService,
     dashboardService: dashboard_service_1.DashboardService,
 };
+exports.default = app;
