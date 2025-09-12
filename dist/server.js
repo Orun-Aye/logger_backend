@@ -32,7 +32,7 @@ const PORT = process.env.PORT || 5000;
 const server = (0, http_1.createServer)(app);
 const JWT_SECRET = process.env.JWT_SECRET;
 app.use((0, cors_1.default)({
-    origin: "*",
+    origin: ["https://loghive.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],

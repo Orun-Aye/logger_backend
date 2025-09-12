@@ -21,7 +21,7 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 
 app.use(
   cors({
-    origin: "*",
+    origin: ["https://loghive.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
