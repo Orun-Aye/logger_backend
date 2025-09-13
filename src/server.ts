@@ -19,6 +19,9 @@ const PORT = process.env.PORT || 5000;
 const server = createServer(app);
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+// Check if running in Vercel serverless environment
+const isVercel = process.env.VERCEL === "1";
+
 app.use(
   cors({
     origin: ["https://loghive.vercel.app"],
@@ -36,24 +39,36 @@ app.use("/api/v1/", logRoutes);
 app.use("/api/v1/alerts", alertRuleRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 
-const dashboardWebSocketService = new DashboardWebSocketService(
-  server,
-  JWT_SECRET
-);
+// Initialize WebSocket service only if not in Vercel environment
+let dashboardWebSocketService: DashboardWebSocketService | null = null;
 
-// Start the server
-const startServer = async () => {
-  await connectDB(process.env.MONGODB_URI);
+if (!isVercel) {
+  dashboardWebSocketService = new DashboardWebSocketService(
+    server,
+    JWT_SECRET
+  );
+}
 
-  server.listen(PORT, () => {
-    console.log(`WebSocket server is running on port ${PORT}`);
+// Start the server only if not in Vercel environment
+if (!isVercel) {
+  const startServer = async () => {
+    await connectDB(process.env.MONGODB_URI);
+
+    server.listen(PORT, () => {
+      console.log(`WebSocket server is running on port ${PORT}`);
+    });
+  };
+
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
   });
-};
-
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-  process.exit(1);
-});
+} else {
+  // In Vercel, just connect to DB without starting server
+  connectDB(process.env.MONGODB_URI).catch((err) => {
+    console.error("Failed to connect to database:", err);
+  });
+}
 
 export const globalServices = {
   dashboardWebSocketService,
@@ -61,5 +76,4 @@ export const globalServices = {
   dashboardService: DashboardService,
 };
 
-
-export default app;
+export { app };

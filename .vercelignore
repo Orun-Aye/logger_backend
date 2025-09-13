@@ -1,0 +1,10 @@
+node_modules
+src
+*.test.ts
+*.test.js
+__tests__
+jest.config.js
+tsconfig.json
+tsconfig.tsbuildinfo
+README.md
+LICENSE

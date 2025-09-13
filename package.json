@@ -6,7 +6,9 @@
     "build": "tsc --build",
     "start": "node ./dist/server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096 -r ts-node/register\" ./src/server.ts",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "vercel-build": "npm run build",
+    "vercel-dev": "npm run dev"
   },
   "keywords": [],
   "author": "",
