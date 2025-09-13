@@ -672,7 +672,7 @@ export class DashboardInsightsService {
         return null;
       }
       const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      if (cached && typeof cached === "string") {
         const data: DashboardInsights = JSON.parse(cached);
         if (data.timeRange) {
           data.timeRange.from = new Date(data.timeRange.from);

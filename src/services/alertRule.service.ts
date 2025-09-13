@@ -3,6 +3,7 @@
 import { AlertRuleModel } from "../models/alertRule.model";
 import { CreateAlertRuleDTO, UpdateAlertRuleDTO } from "../dtos/alertRule.dto";
 import { Types } from "mongoose";
+import { LogModel } from "../models/log.model";
 
 export class RuleNotFoundError extends Error {
   constructor(id: Types.ObjectId) {
@@ -51,7 +52,6 @@ export class AlertRuleService {
 
       // For demonstration, I'll use Option 3 - checking against existing logs
       // Replace this with your actual project validation logic
-      const { LogModel } = await import("../models/log.model");
       const projectExists = await LogModel.findOne({ projectId })
         .select("_id")
         .lean();
