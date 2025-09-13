@@ -97,19 +97,25 @@ All your API routes are prefixed with `/api/v1/`:
 
 ### Common Issues
 
-1. **Build Failures**:
+1. **TypeScript Build Errors**:
+   - **Error**: `TS5083: Cannot read file '/vercel/path0/tsconfig.json'`
+   - **Solution**: Use Vercel's built-in TypeScript support by pointing to `api/index.ts` instead of compiled JS
+   - **Fix**: Update `vercel.json` to use `"src": "api/index.ts"` and let Vercel handle compilation
+
+2. **Build Failures**:
    - Ensure TypeScript compiles successfully
    - Check that all dependencies are in `dependencies`, not `devDependencies`
+   - Use Vercel's automatic TypeScript compilation instead of custom build scripts
 
-2. **Environment Variables**:
+3. **Environment Variables**:
    - Verify all required env vars are set in Vercel dashboard
    - Restart deployment after adding new variables
 
-3. **CORS Issues**:
+4. **CORS Issues**:
    - Update CORS origin in `src/server.ts` if frontend URL changes
    - Check Vercel headers configuration
 
-4. **Database Connection**:
+5. **Database Connection**:
    - Ensure MongoDB URI is correct
    - Check if IP whitelist includes Vercel's IP ranges
 
