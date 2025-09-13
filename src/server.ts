@@ -33,6 +33,22 @@ app.use(
 
 app.use(express.json());
 
+app.get("/server", (req, res) => {
+  res.type('html').send(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>LogHive on Vercel</title>
+      </head>
+      <body>
+        <h1>Welcome to LogHive on Vercel 🚀</h1>
+        <p>This is a complete codebase with a database and endpoints.</p>
+      </body>
+    </html>
+  `)
+});
+
 app.use("/api/v1", userRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/", logRoutes);
@@ -43,10 +59,7 @@ app.use("/api/v1/dashboard", dashboardRoutes);
 let dashboardWebSocketService: DashboardWebSocketService | null = null;
 
 if (!isVercel) {
-  dashboardWebSocketService = new DashboardWebSocketService(
-    server,
-    JWT_SECRET
-  );
+  dashboardWebSocketService = new DashboardWebSocketService(server, JWT_SECRET);
 }
 
 // Start the server only if not in Vercel environment
@@ -76,4 +89,4 @@ export const globalServices = {
   dashboardService: DashboardService,
 };
 
-export { app };
+export default app;

@@ -6,9 +6,7 @@
     "build": "tsc --build",
     "start": "node ./dist/server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096 -r ts-node/register\" ./src/server.ts",
-    "test": "jest --runInBand",
-    "vercel-build": "echo 'Vercel handles TypeScript compilation automatically'",
-    "vercel-dev": "npm run dev"
+    "test": "jest --runInBand"
   },
   "keywords": [],
   "author": "",
