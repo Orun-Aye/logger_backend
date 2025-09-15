@@ -24,14 +24,28 @@ const server = (0, http_1.createServer)(app);
 const JWT_SECRET = process.env.JWT_SECRET;
 // Check if running in Vercel serverless environment
 const isVercel = process.env.VERCEL === "1";
-app.use((0, cors_1.default)({
-    origin: ["https://loghive.vercel.app"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
+// CORS configuration for dashboard/admin routes (restricted)
+const restrictedCors = (0, cors_1.default)({
+    origin: ["https://loghive.vercel.app", "http://localhost:3000"],
+    methods: ["POST"],
+    credentials: false,
     allowedHeaders: ["Content-Type", "Authorization"],
-}));
+});
+// CORS configuration for log ingestion (open to all origins)
+const logIngestionCors = (0, cors_1.default)({
+    origin: true, // Allow all origins
+    methods: ["POST", "GET"], // Typically logs are POST requests
+    credentials: false, // Usually not needed for log ingestion
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-API-Key", // Common for API keys
+        "X-Source-Origin", // Custom header to identify source
+        "User-Agent"
+    ],
+});
 app.use(express_1.default.json());
-app.get("/server", (req, res) => {
+app.get("/", (req, res) => {
     res.type('html').send(`
     <!doctype html>
     <html>
@@ -46,11 +60,13 @@ app.get("/server", (req, res) => {
     </html>
   `);
 });
-app.use("/api/v1", user_routes_1.default);
-app.use("/api/v1/projects", project_routes_1.default);
-app.use("/api/v1/", log_routes_1.default);
-app.use("/api/v1/alerts", alertRule_routes_1.default);
-app.use("/api/v1/dashboard", dashboard_routes_1.default);
+// Apply restricted CORS to admin/dashboard routes
+app.use("/api/v1/users", restrictedCors, user_routes_1.default);
+app.use("/api/v1/projects", restrictedCors, project_routes_1.default);
+app.use("/api/v1/alerts", restrictedCors, alertRule_routes_1.default);
+app.use("/api/v1/dashboard", restrictedCors, dashboard_routes_1.default);
+// Apply open CORS to log ingestion routes
+app.use("/api/v1/logs", logIngestionCors, log_routes_1.default);
 // Initialize WebSocket service only if not in Vercel environment
 let dashboardWebSocketService = null;
 if (!isVercel) {
