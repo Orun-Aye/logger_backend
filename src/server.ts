@@ -70,7 +70,7 @@ app.use("/api/v1/alerts", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
 
 // Apply open CORS to log ingestion routes
-app.use("/api/v1/logs", logIngestionCors, logRoutes);
+app.use("/api/v1/", logIngestionCors, logRoutes);
 
 
 // Initialize WebSocket service only if not in Vercel environment
