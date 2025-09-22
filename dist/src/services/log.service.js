@@ -5,6 +5,7 @@ const log_dto_1 = require("../dtos/log.dto");
 const log_model_1 = require("../models/log.model"); // Import ILog for type safety
 const mongoose_1 = require("mongoose");
 const server_1 = require("../server");
+const alert_service_1 = require("./alert.service");
 // Custom error classes for better error handling
 class LogNotFoundError extends Error {
     constructor(id) {
@@ -150,6 +151,8 @@ class LogService {
                 ingestionSuccess: true,
             };
             const newLog = await log_model_1.LogModel.create(newLogData);
+            // Fire-and-forget alert evaluation to not block ingestion
+            alert_service_1.AlertService.evaluateLogAndTrigger(newLog.toObject()).catch(() => { });
             if (server_1.globalServices.dashboardWebSocketService) {
                 server_1.globalServices.dashboardWebSocketService.broadcastToProject(data.projectId, "NEW_LOG", { log: newLog.toObject() });
             }

@@ -1,6 +1,6 @@
 // src/services/alertRule.service.ts
 
-import { AlertRuleModel } from "../models/alertRule.model";
+import { AlertRuleModel, IAlertRules } from "../models/alertRule.model";
 import { CreateAlertRuleDTO, UpdateAlertRuleDTO } from "../dtos/alertRule.dto";
 import { Types } from "mongoose";
 import { LogModel } from "../models/log.model";
@@ -87,13 +87,26 @@ export class AlertRuleService {
         );
       }
 
-      // 4. Create the new rule
-      const newRule = await AlertRuleModel.create({
-        ...data,
-        timestamp: new Date(),
-      });
+      const ruleData = {
+        projectId: data.projectId,
+        name: data.name,
+        condition: {
+          level: data.condition.level,
+          // Map DTO fields to schema fields
+          keyword: data.condition.keyword,
+          frequency: data.condition.frequency,
+          intervalMinutes: data.condition.intervalMinutes,
+        },
+        isActive: data.isActive ?? true,
+        // Map notifyChannels (schema) from notifyChannels (DTO)
+        notifyChannels: data.notifyChannels || ["email"],
+        notificationConfig: data.notificationConfig || {},
+      };
 
-      return newRule;
+      // 4. Create the new rule
+      const newRule = await AlertRuleModel.create(ruleData);
+
+      return newRule.toObject() as IAlertRules;
     } catch (error) {
       if (
         error instanceof RuleNotFoundError ||
@@ -150,7 +163,7 @@ export class AlertRuleService {
         throw new RuleNotFoundError(ruleId);
       }
 
-      return rule;
+      return rule as IAlertRules;
     } catch (error) {
       if (
         error instanceof RuleNotFoundError ||
@@ -163,15 +176,25 @@ export class AlertRuleService {
     }
   }
 
-  static async updateRule(ruleId: Types.ObjectId, data: UpdateAlertRuleDTO) {
+  /**
+   * Updates an alert rule
+   */
+  static async updateRule(
+    ruleId: Types.ObjectId,
+    data: UpdateAlertRuleDTO
+  ): Promise<IAlertRules> {
     try {
+      if (!Types.ObjectId.isValid(ruleId)) {
+        throw new RuleServiceError("Invalid Rule ID format");
+      }
+
       const existingRule = await AlertRuleModel.findById(ruleId);
       if (!existingRule) {
         throw new RuleNotFoundError(ruleId);
       }
 
       // If projectId is being updated, validate the new projectId
-      if (data.projectId && data.projectId !== existingRule.projectId) {
+      if (data.projectId && !data.projectId.equals(existingRule.projectId)) {
         if (!Types.ObjectId.isValid(data.projectId)) {
           throw new RuleServiceError("Invalid Project ID format");
         }
@@ -182,13 +205,54 @@ export class AlertRuleService {
         }
       }
 
-      const updatedRule = await AlertRuleModel.findByIdAndUpdate(ruleId, data, {
-        new: true,
-        runValidators: true,
-        select: "-__v",
-      }).lean();
+      // Check for name conflicts if name is being updated
+      if (data.name && data.name !== existingRule.name) {
+        const existingWithName = await AlertRuleModel.findOne({
+          projectId: data.projectId || existingRule.projectId,
+          name: data.name,
+          _id: { $ne: ruleId }
+        });
 
-      return updatedRule;
+        if (existingWithName) {
+          throw new RuleServiceError(
+            "Alert Rule with the same name already exists for this project."
+          );
+        }
+      }
+
+      // Prepare update data to match schema structure
+      const updateData: any = {};
+      
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.projectId !== undefined) updateData.projectId = data.projectId;
+      if (data.isActive !== undefined) updateData.isActive = data.isActive;
+      if (data.notifyChannels !== undefined) updateData.notifyChannels = data.notifyChannels;
+      if (data.notificationConfig !== undefined) updateData.notificationConfig = data.notificationConfig;
+      
+      // Handle condition updates
+      if (data.condition) {
+        updateData.condition = {};
+        if (data.condition.level !== undefined) updateData.condition.level = data.condition.level;
+        if (data.condition.keyword !== undefined) updateData.condition.keyword = data.condition.keyword;
+        if (data.condition.frequency !== undefined) updateData.condition.frequency = data.condition.frequency;
+        if (data.condition.intervalMinutes !== undefined) updateData.condition.intervalMinutes = data.condition.intervalMinutes;
+      }
+
+      const updatedRule = await AlertRuleModel.findByIdAndUpdate(
+        ruleId,
+        updateData,
+        {
+          new: true,
+          runValidators: true,
+          select: "-__v",
+        }
+      ).lean();
+
+      if (!updatedRule) {
+        throw new RuleNotFoundError(ruleId);
+      }
+
+      return updatedRule as IAlertRules;
     } catch (error) {
       if (
         error instanceof RuleNotFoundError ||
@@ -197,7 +261,9 @@ export class AlertRuleService {
       ) {
         throw error;
       }
-      throw new Error(`Failed to update rule: ${error}`);
+      throw new Error(
+        `Failed to update rule: ${error}`,
+      );
     }
   }
 

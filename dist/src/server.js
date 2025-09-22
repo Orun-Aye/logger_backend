@@ -13,6 +13,7 @@ const log_routes_1 = __importDefault(require("./routes/log.routes"));
 const alertRule_routes_1 = __importDefault(require("./routes/alertRule.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
 const dashboard_routes_1 = __importDefault(require("./routes/dashboard.routes"));
+const alertEvent_routes_1 = __importDefault(require("./routes/alertEvent.routes"));
 const http_1 = require("http");
 const websocket_service_1 = require("./services/websocket.service");
 const log_service_1 = require("./services/log.service");
@@ -55,7 +56,7 @@ app.get("/", (req, res) => {
       </head>
       <body>
         <h1>Welcome to LogHive on Vercel 🚀</h1>
-        <p>This is a complete codebase with a database and endpoints.</p>
+        <p>Backend Operations Management server for the LogHive platform and Monita SDK.</p>
       </body>
     </html>
   `);
@@ -65,8 +66,9 @@ app.use("/api/v1/users", restrictedCors, user_routes_1.default);
 app.use("/api/v1/projects", restrictedCors, project_routes_1.default);
 app.use("/api/v1/alerts", restrictedCors, alertRule_routes_1.default);
 app.use("/api/v1/dashboard", restrictedCors, dashboard_routes_1.default);
+app.use("/api/v1/events", restrictedCors, alertEvent_routes_1.default);
 // Apply open CORS to log ingestion routes
-app.use("/api/v1/logs", logIngestionCors, log_routes_1.default);
+app.use("/api/v1/", logIngestionCors, log_routes_1.default);
 // Initialize WebSocket service only if not in Vercel environment
 let dashboardWebSocketService = null;
 if (!isVercel) {

@@ -76,12 +76,24 @@ class AlertRuleService {
             if (existingRule) {
                 throw new RuleServiceError("Alert Rule with the same name already set for this project.");
             }
+            const ruleData = {
+                projectId: data.projectId,
+                name: data.name,
+                condition: {
+                    level: data.condition.level,
+                    // Map DTO fields to schema fields
+                    keyword: data.condition.keyword,
+                    frequency: data.condition.frequency,
+                    intervalMinutes: data.condition.intervalMinutes,
+                },
+                isActive: data.isActive ?? true,
+                // Map notifyChannels (schema) from notifyChannels (DTO)
+                notifyChannels: data.notifyChannels || ["email"],
+                notificationConfig: data.notificationConfig || {},
+            };
             // 4. Create the new rule
-            const newRule = await alertRule_model_1.AlertRuleModel.create({
-                ...data,
-                timestamp: new Date(),
-            });
-            return newRule;
+            const newRule = await alertRule_model_1.AlertRuleModel.create(ruleData);
+            return newRule.toObject();
         }
         catch (error) {
             if (error instanceof RuleNotFoundError ||
@@ -138,14 +150,20 @@ class AlertRuleService {
             throw new Error(`Failed to get rule: ${error}`);
         }
     }
+    /**
+     * Updates an alert rule
+     */
     static async updateRule(ruleId, data) {
         try {
+            if (!mongoose_1.Types.ObjectId.isValid(ruleId)) {
+                throw new RuleServiceError("Invalid Rule ID format");
+            }
             const existingRule = await alertRule_model_1.AlertRuleModel.findById(ruleId);
             if (!existingRule) {
                 throw new RuleNotFoundError(ruleId);
             }
             // If projectId is being updated, validate the new projectId
-            if (data.projectId && data.projectId !== existingRule.projectId) {
+            if (data.projectId && !data.projectId.equals(existingRule.projectId)) {
                 if (!mongoose_1.Types.ObjectId.isValid(data.projectId)) {
                     throw new RuleServiceError("Invalid Project ID format");
                 }
@@ -154,11 +172,49 @@ class AlertRuleService {
                     throw new ProjectNotFoundError(data.projectId);
                 }
             }
-            const updatedRule = await alertRule_model_1.AlertRuleModel.findByIdAndUpdate(ruleId, data, {
+            // Check for name conflicts if name is being updated
+            if (data.name && data.name !== existingRule.name) {
+                const existingWithName = await alertRule_model_1.AlertRuleModel.findOne({
+                    projectId: data.projectId || existingRule.projectId,
+                    name: data.name,
+                    _id: { $ne: ruleId }
+                });
+                if (existingWithName) {
+                    throw new RuleServiceError("Alert Rule with the same name already exists for this project.");
+                }
+            }
+            // Prepare update data to match schema structure
+            const updateData = {};
+            if (data.name !== undefined)
+                updateData.name = data.name;
+            if (data.projectId !== undefined)
+                updateData.projectId = data.projectId;
+            if (data.isActive !== undefined)
+                updateData.isActive = data.isActive;
+            if (data.notifyChannels !== undefined)
+                updateData.notifyChannels = data.notifyChannels;
+            if (data.notificationConfig !== undefined)
+                updateData.notificationConfig = data.notificationConfig;
+            // Handle condition updates
+            if (data.condition) {
+                updateData.condition = {};
+                if (data.condition.level !== undefined)
+                    updateData.condition.level = data.condition.level;
+                if (data.condition.keyword !== undefined)
+                    updateData.condition.keyword = data.condition.keyword;
+                if (data.condition.frequency !== undefined)
+                    updateData.condition.frequency = data.condition.frequency;
+                if (data.condition.intervalMinutes !== undefined)
+                    updateData.condition.intervalMinutes = data.condition.intervalMinutes;
+            }
+            const updatedRule = await alertRule_model_1.AlertRuleModel.findByIdAndUpdate(ruleId, updateData, {
                 new: true,
                 runValidators: true,
                 select: "-__v",
             }).lean();
+            if (!updatedRule) {
+                throw new RuleNotFoundError(ruleId);
+            }
             return updatedRule;
         }
         catch (error) {

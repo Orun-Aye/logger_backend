@@ -6,6 +6,19 @@ const alertRule_service_1 = require("../services/alertRule.service");
 class AlertRuleController {
     static async create(req, res) {
         try {
+            const { name, projectId, condition, isActive = true, notifyChannels = ["email"], notificationConfig = {}, } = req.body;
+            if (!name || !condition) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Missing required fields: name and condition are required"
+                });
+            }
+            if (!condition.level) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Condition must include level"
+                });
+            }
             const rule = await alertRule_service_1.AlertRuleService.createRule({
                 ...req.body,
                 projectId: req.projectId,

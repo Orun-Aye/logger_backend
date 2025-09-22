@@ -7,6 +7,7 @@ import {
 import { LogModel, ILog } from "../models/log.model"; // Import ILog for type safety
 import { Types, SortOrder } from "mongoose";
 import { globalServices } from "../server";
+import { AlertService } from "./alert.service";
 
 // Custom error classes for better error handling
 export class LogNotFoundError extends Error {
@@ -166,6 +167,9 @@ export class LogService {
       };
 
       const newLog = await LogModel.create(newLogData);
+
+      // Fire-and-forget alert evaluation to not block ingestion
+      AlertService.evaluateLogAndTrigger(newLog.toObject() as ILog).catch(() => {});
 
       if (globalServices.dashboardWebSocketService) {
         globalServices.dashboardWebSocketService.broadcastToProject(

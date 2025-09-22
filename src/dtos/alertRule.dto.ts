@@ -8,11 +8,12 @@ export interface CreateAlertRuleDTO {
   projectId:  Types.ObjectId;
   condition: {
     level: string; // e.g. "level"
-    threshold: number;
-    timeWindowMinutes: number;
+    keyword: number;
+    frequency?: number;
+    intervalMinutes: number;
   };
   isActive?: boolean;
-  notifyVia?: string[];
+  notifyChannels?: string[];
   notificationConfig?: object;
 }
 
@@ -20,11 +21,12 @@ export interface UpdateAlertRuleDTO {
   name?: string;
   projectId: Types.ObjectId
   condition?: {
-    level: string;
-    threshold: number;
-    timeWindowMinutes: number;
+    level: string; // e.g. "level"
+    keyword: number;
+    frequency?: number;
+    intervalMinutes: number;
   };
   isActive?: boolean;
-  notifyVia?: string[];
+  notifyChannels?: string[];
   notificationConfig?: object;
 }

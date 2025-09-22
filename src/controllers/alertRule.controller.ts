@@ -11,6 +11,29 @@ import { CreateAlertRuleDTO } from "../dtos/alertRule.dto";
 export class AlertRuleController {
   static async create(req: Request, res: Response) {
     try {
+      const {
+        name,
+        projectId,
+        condition,
+        isActive = true,
+        notifyChannels = ["email"],
+        notificationConfig = {},
+      }: CreateAlertRuleDTO = req.body;
+
+      if (!name || !condition) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: name and condition are required"
+        })
+      }
+
+      if (!condition.level) {
+        return res.status(400).json({
+          success: false,
+          error: "Condition must include level"
+        });
+      }
+
       const rule = await AlertRuleService.createRule({
         ...(req.body as CreateAlertRuleDTO),
         projectId: req.projectId,

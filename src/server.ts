@@ -7,6 +7,7 @@ import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
+import alertEventRoutes from "./routes/alertEvent.routes";
 import { createServer } from "http";
 import { DashboardWebSocketService } from "./services/websocket.service";
 import { LogService } from "./services/log.service";
@@ -57,7 +58,7 @@ app.get("/", (req, res) => {
       </head>
       <body>
         <h1>Welcome to LogHive on Vercel 🚀</h1>
-        <p>This is a complete codebase with a database and endpoints.</p>
+        <p>Backend Operations Management server for the LogHive platform and Monita SDK.</p>
       </body>
     </html>
   `)
@@ -68,6 +69,7 @@ app.use("/api/v1/users", restrictedCors, userRoutes);
 app.use("/api/v1/projects", restrictedCors, projectRoutes);
 app.use("/api/v1/alerts", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
+app.use("/api/v1/events", restrictedCors, alertEventRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
