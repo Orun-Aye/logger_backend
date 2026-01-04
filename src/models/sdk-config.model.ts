@@ -50,6 +50,8 @@ const SDKConfigSchema = new Schema<ISDKConfig>({
   minLogLevel: { type: String, default: 'info' },
   batchSize: { type: Number, default: 10, min: 1, max: 100 },
   flushIntervalMs: { type: Number, default: 5000, min: 1000, max: 60000 },
+  environment: { type: String },
+  serviceName: { type: String },
   
   autoCapture: {
     errors: { type: Boolean, default: true },
