@@ -217,7 +217,7 @@ export class ProjectController {
 
   /**
    * Retrieves projects associated with a specific user
-   * GET /api/projects/user
+   * GET /projects
    * 
    * @param req - Request with user ID attached
    * @param res - Response with user's projects
@@ -254,7 +254,7 @@ export class ProjectController {
 
   /**
    * Retrieves a single project by ID
-   * GET /api/projects/:id
+   * GET /projects/:id
    * 
    * Query parameters:
    * - populateRefs: Whether to populate referenced fields (default: false)

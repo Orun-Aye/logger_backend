@@ -3,11 +3,13 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { connectDB } from "./utils/db";
 import projectRoutes from "./routes/project.routes";
+import sdkConfigRoutes from "./routes/sdk-config.routes";
 import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
 import alertEventRoutes from "./routes/alertEvent.routes";
+import notificationRoutes from "./routes/notification.routes";
 import { createServer } from "http";
 import { DashboardWebSocketService } from "./services/websocket.service";
 import { LogService } from "./services/log.service";
@@ -23,14 +25,13 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 // Check if running in Vercel serverless environment
 const isVercel = process.env.VERCEL === "1";
 
-
 // CORS configuration for dashboard/admin routes (restricted)
 const restrictedCors = cors({
   origin: ["https://loghive.vercel.app", "http://localhost:3000"],
-  methods: ["POST"],
+  methods: ["POST", "PUT"],
   credentials: false,
   allowedHeaders: ["Content-Type", "Authorization"],
-})
+});
 
 // CORS configuration for log ingestion (open to all origins)
 const logIngestionCors = cors({
@@ -38,18 +39,18 @@ const logIngestionCors = cors({
   methods: ["POST", "GET"], // Typically logs are POST requests
   credentials: false, // Usually not needed for log ingestion
   allowedHeaders: [
-    "Content-Type", 
-    "Authorization", 
+    "Content-Type",
+    "Authorization",
     "X-API-Key", // Common for API keys
     "X-Source-Origin", // Custom header to identify source
-    "User-Agent"
+    "User-Agent",
   ],
 });
 
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.type('html').send(`
+  res.type("html").send(`
     <!doctype html>
     <html>
       <head>
@@ -61,19 +62,19 @@ app.get("/", (req, res) => {
         <p>Backend Operations Management server for the LogHive platform and Monita SDK.</p>
       </body>
     </html>
-  `)
+  `);
 });
 
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, userRoutes);
-app.use("/api/v1/projects", restrictedCors, projectRoutes);
+app.use("/api/v1/projects", restrictedCors, projectRoutes, sdkConfigRoutes);
 app.use("/api/v1/alerts", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
 app.use("/api/v1/events", restrictedCors, alertEventRoutes);
+app.use("/api/v1/notifications", restrictedCors, notificationRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
-
 
 // Initialize WebSocket service only if not in Vercel environment
 let dashboardWebSocketService: DashboardWebSocketService | null = null;

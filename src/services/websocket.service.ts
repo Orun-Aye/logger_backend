@@ -1,142 +1,143 @@
 // src/services/websocket.service.ts
-// @ts-nocheck
+import { Server, Socket } from "socket.io";
+import jwt from "jsonwebtoken";
+import { DashboardService } from "./dashboard.service";
+import { DashboardWebSocketMessage } from "../dtos/websocket.dto";
 
-import { WebSocket, WebSocketServer } from 'ws';
-import jwt from 'jsonwebtoken';
-import { IncomingMessage } from 'http';
-import { DashboardService } from './dashboard.service'; // We will create this below
-import { DashboardWebSocketMessage } from '../dtos/websocket.dto';
-
-// Extend the WebSocket type to include user data
-interface AuthenticatedWebSocket extends WebSocket {
-  userId: string;
-  projectId: string | null;
+// Extend the Socket type to include user data if needed,
+// but Socket.io sockets are dynamic, so we can attach properties directly or use a typed interface.
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+  projectId?: string | null;
 }
 
 export class DashboardWebSocketService {
-  private wss: WebSocketServer;
+  public io: Server;
   private readonly jwtSecret: string;
-  // A map to keep track of connections by project ID
-  private clients: Map<string, Set<AuthenticatedWebSocket>> = new Map();
 
-  constructor(server: any, jwtSecret: string) {
-    this.wss = new WebSocketServer({ server });
+  // A map to keep track of connections by project ID
+  // Socket.io has 'rooms', so we can use that instead of manual maps for projects!
+  // We'll still keep a map for user targeting if we want to be explicit,
+  // but Socket.io allows io.to(socketId).emit or io.to(room).emit.
+  // To target a user by userId, we can join them to a room named `user:${userId}`.
+
+  constructor(httpServer: any, jwtSecret: string) {
+    this.io = new Server(httpServer, {
+      cors: {
+        origin: "*", // Adjust as needed for security
+        methods: ["GET", "POST"],
+      },
+    });
     this.jwtSecret = jwtSecret;
     this.init();
   }
 
-  // Initializes the WebSocket server and its event handlers
   public init() {
-    this.wss.on('connection', this.handleConnection);
-    console.log('WebSocket server initialized.');
+    this.io.use(async (socket: AuthenticatedSocket, next) => {
+      try {
+        const token =
+          socket.handshake.auth.token || socket.handshake.query.token;
+        if (!token) {
+          return next(new Error("Authentication token is required."));
+        }
+        const decoded = jwt.verify(token as string, this.jwtSecret) as {
+          userId: string;
+        };
+        socket.userId = decoded.userId;
+        next();
+      } catch (error) {
+        next(new Error("Authentication error"));
+      }
+    });
+
+    this.io.on("connection", this.handleConnection);
+    console.log("Socket.io server initialized.");
   }
 
-  // Handle a new incoming WebSocket connection
-  private handleConnection = async (ws: WebSocket, req: IncomingMessage) => {
-    // Authenticate the user from the JWT token in the connection URL
-    const token = new URL(req.url || '/', `http://${req.headers.host}`).searchParams.get('token');
-    const authWs = ws as AuthenticatedWebSocket;
-    
-    try {
-      if (!token) {
-        throw new Error('Authentication token is required.');
-      }
-      const decoded = jwt.verify(token, this.jwtSecret) as { userId: string };
-      authWs.userId = decoded.userId;
-      
-      console.log(`User ${authWs.userId} connected.`);
+  private handleConnection = async (socket: AuthenticatedSocket) => {
+    const userId = socket.userId!;
+    console.log(`User ${userId} connected via Socket.io.`);
 
-      
-      authWs.on('message', (message) => this.handleMessage(authWs, message));
-      authWs.on('close', () => this.handleClose(authWs));
-      authWs.on('error', (err) => console.error('WebSocket error:', err));
-      
-      // Send a welcome message with a list of projects the user can access
-      const projects = await DashboardService.getUserProjectList(authWs.userId);
-      const welcomeMessage: DashboardWebSocketMessage = {
-        type: 'INITIAL_DATA',
+    // Join a room specific to this user for targeted notifications
+    socket.join(userId);
+
+    // Send initial data
+    try {
+      const projects = await DashboardService.getUserProjectList(userId);
+      socket.emit("message", {
+        type: "INITIAL_DATA",
         payload: { projects },
-      };
-      authWs.send(JSON.stringify(welcomeMessage));
+      });
     } catch (error) {
-      console.error('WebSocket authentication failed:', error);
-      authWs.send(JSON.stringify({ type: 'AUTH_ERROR', message: (error as Error).message }));
-      authWs.close();
+      console.error("Error fetching initial data for socket:", error);
     }
-  };
 
-  // Handle incoming messages from a client
-  private handleMessage = (ws: AuthenticatedWebSocket, message: string) => {
-    try {
-      const parsedMessage = JSON.parse(message);
-      if (parsedMessage.type === 'SUBSCRIBE_TO_PROJECT') {
-        const projectId = parsedMessage.payload.projectId;
-        this.subscribeClientToProject(ws, projectId);
-      } else if (parsedMessage.type === 'UNSUBSCRIBE_FROM_PROJECT') {
-        const projectId = parsedMessage.payload.projectId;
-        this.unsubscribeClientFromProject(ws, projectId);
-      }
-    } catch (error) {
-      console.error('Failed to parse WebSocket message:', message);
-    }
-  };
+    socket.on("message", (data: any) => this.handleMessage(socket, data));
 
-  // Handle client disconnection
-  private handleClose = (ws: AuthenticatedWebSocket) => {
-    console.log(`User ${ws.userId} disconnected.`);
-    // Clean up the client from all project subscriptions
-    this.clients.forEach((clientSet) => {
-      if (clientSet.has(ws)) {
-        clientSet.delete(ws);
-      }
+    socket.on("disconnect", () => {
+      console.log(`User ${userId} disconnected.`);
     });
   };
 
-  // Subscribe a client to a project's real-time updates
-  private subscribeClientToProject = (ws: AuthenticatedWebSocket, projectId: string) => {
-    // If the project ID is new, initialize a new Set for clients
-    if (!this.clients.has(projectId)) {
-      this.clients.set(projectId, new Set());
-    }
-    this.clients.get(projectId)?.add(ws);
-    ws.projectId = projectId;
-    console.log(`User ${ws.userId} subscribed to project ${projectId}. Total subscribers: ${this.clients.get(projectId)?.size}`);
-  };
+  private handleMessage = (socket: AuthenticatedSocket, data: any) => {
+    try {
+      // If data is string, parse it, otherwise assume it's object (Socket.io parses JSON auto)
+      const parsedMessage = typeof data === "string" ? JSON.parse(data) : data;
 
-  // Unsubscribe a client from a project's real-time updates
-  private unsubscribeClientFromProject = (ws: AuthenticatedWebSocket, projectId: string) => {
-    if (this.clients.has(projectId)) {
-      this.clients.get(projectId)?.delete(ws);
-      ws.projectId = null;
-      console.log(`User ${ws.userId} unsubscribed from project ${projectId}. Remaining subscribers: ${this.clients.get(projectId)?.size}`);
-      if (this.clients.get(projectId)?.size === 0) {
-        this.clients.delete(projectId); // Clean up empty sets
+      if (parsedMessage.type === "SUBSCRIBE_TO_PROJECT") {
+        const projectId = parsedMessage.payload.projectId;
+        socket.join(projectId);
+        console.log(`User ${socket.userId} subscribed to project ${projectId}`);
+      } else if (parsedMessage.type === "UNSUBSCRIBE_FROM_PROJECT") {
+        const projectId = parsedMessage.payload.projectId;
+        socket.leave(projectId);
+        console.log(
+          `User ${socket.userId} unsubscribed from project ${projectId}`
+        );
       }
+    } catch (error) {
+      console.error("Failed to handle socket message:", error);
     }
   };
 
-  /**
-   * Broadcasts a message to all clients subscribed to a given project.
-   * @param projectId The ID of the project to broadcast to.
-   * @param messageType The type of the message (e.g., 'NEW_LOG').
-   * @param payload The data to send with the message.
-   */
-  public broadcastToProject(projectId: string, messageType: DashboardWebSocketMessage['type'], payload: any) {
-    const clients = this.clients.get(projectId);
-    if (!clients) {
-      return;
-    }
-    
-    const message: DashboardWebSocketMessage = {
+  public broadcastToProject(
+    projectId: string,
+    messageType: string,
+    payload: any
+  ) {
+    this.io.to(projectId).emit("message", {
       type: messageType,
       payload,
-    };
-    const jsonMessage = JSON.stringify(message);
-
-    clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(jsonMessage);
-      }
     });
+  }
+
+  public sendToUser(userId: string, messageType: string, payload: any) {
+    this.io.to(userId).emit("notification", {
+      type: messageType,
+      ...payload, // Flatten payload or keep structure depending on client expectation.
+      // Previous implementation sent { type, payload }.
+      // Let's stick to the previous structure for consistency if possible,
+      // or adapt. The notification service sends 'notification' event.
+    });
+    // Actually, in the previous implementation:
+    // globalServices.dashboardWebSocketService.sendToUser(userId, 'NOTIFICATION', notification);
+    // And sendToUser did: client.send(JSON.stringify({ type: messageType, payload }));
+    // So the client received a message with type='NOTIFICATION' and payload=notification object.
+
+    // With Socket.io, we can emit a named event 'notification' directly, or a generic 'message' event.
+    // The previous code in NotificationService did:
+    // globalServices.dashboardWebSocketService.sendToUser(userId, 'NOTIFICATION', notification);
+
+    // Let's make this sendToUser emit a custom event if provided, or default to 'message'.
+    // But to maintain compatibility with the "type" property in the payload:
+    this.io.to(userId).emit("message", {
+      type: messageType,
+      payload,
+    });
+
+    // Also emit a specific 'notification' event for easier client handling if they prefer
+    if (messageType === "NOTIFICATION") {
+      this.io.to(userId).emit("notification", payload);
+    }
   }
 }

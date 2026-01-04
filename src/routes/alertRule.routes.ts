@@ -4,7 +4,6 @@ import { authenticateApiKey } from "../middleware/auth.middleware";
 
 const router = Router();
 
-router.use(authenticateApiKey);
 
 router.post("/", AlertRuleController.create);
 router.get("/", AlertRuleController.getRuleByProject);
