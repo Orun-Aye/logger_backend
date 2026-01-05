@@ -8,6 +8,7 @@ import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
+import analyticsRoutes from "./routes/analytics.routes";
 import alertEventRoutes from "./routes/alertEvent.routes";
 import notificationRoutes from "./routes/notification.routes";
 import { createServer } from "http";
@@ -72,16 +73,29 @@ app.use("/api/v1/alerts", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
 app.use("/api/v1/events", restrictedCors, alertEventRoutes);
 app.use("/api/v1/notifications", restrictedCors, notificationRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
 
-// Initialize WebSocket service only if not in Vercel environment
-let dashboardWebSocketService: DashboardWebSocketService | null = null;
 
-if (!isVercel) {
-  dashboardWebSocketService = new DashboardWebSocketService(server, JWT_SECRET);
-}
+// WEBSOCKET INITIALIZATION
+export const globalServices = {
+  dashboardWebSocketService: new DashboardWebSocketService(server, JWT_SECRET),
+};
+
+// ERROR HANDLING
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Server Error:', err);
+  
+  res.status(err.status || 500).json({
+    status: 'error',
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+  });
+});
+
+
 
 // Start the server only if not in Vercel environment
 if (!isVercel) {
@@ -104,10 +118,5 @@ if (!isVercel) {
   });
 }
 
-export const globalServices = {
-  dashboardWebSocketService,
-  logService: LogService,
-  dashboardService: DashboardService,
-};
 
 export default app;
