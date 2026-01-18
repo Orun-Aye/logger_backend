@@ -10,8 +10,9 @@ const AlertEventSchema = new mongoose_1.Schema({
     message: { type: String, required: true },
     severity: { type: String, enum: ["info", "warning", "critical"], default: "warning", index: true },
     notifyChannels: { type: [String], enum: ["email", "slack", "webhook"], default: ["email"] },
+    tags: { type: [String] },
     metadata: { type: mongoose_1.Schema.Types.Mixed },
-    acknowledged: { type: Boolean, default: false },
+    status: { type: String, enum: ["active", "acknowledged", "resolved", "snoozed"], default: "active" },
     acknowledgedAt: { type: Date },
     triggeredAt: { type: Date, default: () => new Date() },
 }, { timestamps: true });

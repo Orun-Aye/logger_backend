@@ -1,40 +1,477 @@
 "use strict";
-// @ts-nocheck
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationService = void 0;
+const nodemailer_1 = __importDefault(require("nodemailer"));
+const notification_model_1 = __importDefault(require("../models/notification.model"));
+const server_1 = require("../server");
 class NotificationService {
-    static async sendEmail(to, subject, text) {
-        if (!to?.length)
-            return;
-        // Placeholder: integrate with real provider (e.g., SendGrid, SES)
-        console.log(`[Notification] Email -> ${to.join(', ')} | ${subject}`);
+    // SMTP transporter for email
+    static transporter = nodemailer_1.default.createTransport({
+        host: process.env.SMTP_HOST || "smtp.ethereal.email",
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+        },
+    });
+    static config = {
+        email: {
+            provider: process.env.EMAIL_PROVIDER || 'smtp',
+            fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@yourapp.com',
+            fromName: process.env.FROM_NAME || 'Alert System',
+        },
+        webhook: {
+            defaultTimeout: 10000,
+            defaultRetries: 3,
+            defaultHeaders: { 'User-Agent': 'AlertSystem/1.0' },
+        },
+        rateLimiting: {
+            enabled: process.env.NODE_ENV === 'production',
+            maxPerMinute: 60,
+            maxPerHour: 500,
+        },
+    };
+    static rateLimitTracker = {};
+    /**
+     * Configure the notification service
+     */
+    static configure(config) {
+        this.config = { ...this.config, ...config };
     }
+    /**
+     * Send email notification with enhanced options
+     */
+    static async sendEmail(options, subject, text) {
+        const startTime = Date.now();
+        try {
+            // Handle legacy signature for backward compatibility
+            const emailOptions = Array.isArray(options)
+                ? { to: options, subject: subject, text }
+                : options;
+            if (!emailOptions.to?.length) {
+                return { success: false, channel: 'email', error: 'No recipients provided' };
+            }
+            // Rate limiting check
+            if (!this.checkRateLimit('email', emailOptions.to.join(','))) {
+                return { success: false, channel: 'email', error: 'Rate limit exceeded' };
+            }
+            const provider = this.config.email?.provider || 'smtp';
+            switch (provider) {
+                case 'sendgrid':
+                    return await this.sendEmailViaSendGrid(emailOptions);
+                case 'ses':
+                    return await this.sendEmailViaSES(emailOptions);
+                case 'smtp':
+                    return await this.sendEmailViaSMTP(emailOptions);
+                default:
+                    // Console provider for development
+                    console.log(`[Email Notification] To: ${emailOptions.to.join(', ')}`);
+                    console.log(`[Email Notification] Subject: ${emailOptions.subject}`);
+                    console.log(`[Email Notification] Content: ${emailOptions.text || emailOptions.html}`);
+                    if (emailOptions.cc?.length)
+                        console.log(`[Email Notification] CC: ${emailOptions.cc.join(', ')}`);
+                    return {
+                        success: true,
+                        channel: 'email',
+                        duration: Date.now() - startTime
+                    };
+            }
+        }
+        catch (error) {
+            return {
+                success: false,
+                channel: 'email',
+                error: error.message,
+                duration: Date.now() - startTime
+            };
+        }
+    }
+    /**
+     * Send Slack notification with rich message support
+     */
     static async sendSlack(webhookUrl, message) {
-        if (!webhookUrl)
-            return;
-        try {
-            await fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: message }),
-            });
+        const startTime = Date.now();
+        if (!webhookUrl) {
+            return { success: false, channel: 'slack', error: 'No webhook URL provided' };
         }
-        catch (err) {
-            console.error('Failed to send Slack notification', err);
+        if (!this.checkRateLimit('slack', webhookUrl)) {
+            return { success: false, channel: 'slack', error: 'Rate limit exceeded' };
         }
-    }
-    static async sendWebhook(url, payload) {
-        if (!url)
-            return;
         try {
-            await fetch(url, {
+            const payload = typeof message === 'string'
+                ? { text: message }
+                : message;
+            // Apply default Slack config
+            if (this.config.slack) {
+                payload.channel = payload.channel || this.config.slack.defaultChannel;
+                payload.username = payload.username || this.config.slack.defaultUsername;
+                payload.icon_emoji = payload.icon_emoji || this.config.slack.defaultIconEmoji;
+            }
+            const response = await this.makeHttpRequest({
+                url: webhookUrl,
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
+                timeout: 10000,
             });
+            return {
+                success: response.ok,
+                channel: 'slack',
+                statusCode: response.status,
+                error: response.ok ? undefined : `HTTP ${response.status}: ${response.statusText}`,
+                duration: Date.now() - startTime,
+            };
         }
-        catch (err) {
-            console.error('Failed to send webhook notification', err);
+        catch (error) {
+            return {
+                success: false,
+                channel: 'slack',
+                error: error.message,
+                duration: Date.now() - startTime,
+            };
+        }
+    }
+    /**
+     * Send Discord notification
+     */
+    static async sendDiscord(webhookUrl, message) {
+        const startTime = Date.now();
+        if (!webhookUrl) {
+            return { success: false, channel: 'discord', error: 'No webhook URL provided' };
+        }
+        try {
+            const response = await fetch(webhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content: message }),
+            });
+            return {
+                success: response.ok,
+                channel: 'discord',
+                statusCode: response.status,
+                error: response.ok ? undefined : `HTTP ${response.status}`,
+                duration: Date.now() - startTime,
+            };
+        }
+        catch (error) {
+            console.error("Failed to send Discord notification", error);
+            return {
+                success: false,
+                channel: 'discord',
+                error: error.message,
+                duration: Date.now() - startTime,
+            };
+        }
+    }
+    /**
+     * Send in-app notification
+     */
+    static async sendInApp(userId, type, message, metadata) {
+        try {
+            const notification = await notification_model_1.default.create({
+                userId,
+                type,
+                message,
+                metadata,
+            });
+            // Real-time update via WebSocket
+            if (server_1.globalServices.dashboardWebSocketService) {
+                server_1.globalServices.dashboardWebSocketService.sendToUser(userId, "NOTIFICATION", notification);
+            }
+            return notification;
+        }
+        catch (error) {
+            console.error("[Notification] In-App failed:", error);
+        }
+    }
+    /**
+     * Send webhook notification with enhanced options
+     */
+    static async sendWebhook(options, payload) {
+        const startTime = Date.now();
+        try {
+            // Handle legacy signature for backward compatibility
+            const webhookOptions = typeof options === 'string'
+                ? { url: options, payload }
+                : options;
+            if (!webhookOptions.url) {
+                return { success: false, channel: 'webhook', error: 'No webhook URL provided' };
+            }
+            if (!this.checkRateLimit('webhook', webhookOptions.url)) {
+                return { success: false, channel: 'webhook', error: 'Rate limit exceeded' };
+            }
+            const { url, payload: webhookPayload, headers = {}, timeout = this.config.webhook?.defaultTimeout || 10000, retries = this.config.webhook?.defaultRetries || 3, authentication } = webhookOptions;
+            // Merge default headers
+            const finalHeaders = {
+                'Content-Type': 'application/json',
+                ...this.config.webhook?.defaultHeaders,
+                ...headers,
+            };
+            // Add authentication headers
+            if (authentication) {
+                switch (authentication.type) {
+                    case 'bearer':
+                        finalHeaders['Authorization'] = `Bearer ${authentication.token}`;
+                        break;
+                    case 'basic':
+                        const basicAuth = Buffer.from(`${authentication.username}:${authentication.password}`).toString('base64');
+                        finalHeaders['Authorization'] = `Basic ${basicAuth}`;
+                        break;
+                    case 'api-key':
+                        finalHeaders[authentication.headerName || 'X-API-Key'] = authentication.apiKey;
+                        break;
+                }
+            }
+            const response = await this.makeHttpRequestWithRetry({
+                url,
+                method: 'POST',
+                headers: finalHeaders,
+                body: JSON.stringify(webhookPayload),
+                timeout,
+            }, retries);
+            return {
+                success: response.ok,
+                channel: 'webhook',
+                statusCode: response.status,
+                error: response.ok ? undefined : `HTTP ${response.status}: ${response.statusText}`,
+                duration: Date.now() - startTime,
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                channel: 'webhook',
+                error: error.message,
+                duration: Date.now() - startTime,
+            };
+        }
+    }
+    /**
+     * Send notifications to multiple channels concurrently
+     */
+    static async sendMultiChannel(channels) {
+        const promises = channels.map(async (channel) => {
+            try {
+                switch (channel.type) {
+                    case 'email':
+                        return await this.sendEmail(channel.options);
+                    case 'slack':
+                        return await this.sendSlack(channel.options.webhookUrl, channel.options.message);
+                    case 'webhook':
+                        return await this.sendWebhook(channel.options);
+                    case 'discord':
+                        return await this.sendDiscord(channel.options.webhookUrl, channel.options.message);
+                    default:
+                        return { success: false, channel: channel.type, error: 'Unknown channel type' };
+                }
+            }
+            catch (error) {
+                return { success: false, channel: channel.type, error: error.message };
+            }
+        });
+        return Promise.allSettled(promises).then(results => results.map((result, index) => result.status === 'fulfilled'
+            ? result.value
+            : { success: false, channel: channels[index].type, error: result.reason }));
+    }
+    /**
+     * Create formatted alert messages for different channels
+     */
+    static formatAlertMessage(alert, channel) {
+        const { title, message, severity, triggeredAt, environment, metadata } = alert;
+        const timestamp = new Date(triggeredAt).toLocaleString();
+        switch (channel) {
+            case 'email':
+                return {
+                    subject: `Alert: ${title}`,
+                    html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px;">
+              <div style="background: ${severity === 'critical' ? '#dc3545' : severity === 'warning' ? '#ffc107' : '#17a2b8'}; color: white; padding: 20px; border-radius: 5px 5px 0 0;">
+                <h2 style="margin: 0;">${title}</h2>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Severity: ${severity.toUpperCase()}</p>
+              </div>
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 5px 5px;">
+                <p><strong>Message:</strong> ${message}</p>
+                <p><strong>Triggered:</strong> ${timestamp}</p>
+                ${environment ? `<p><strong>Environment:</strong> ${environment}</p>` : ''}
+                ${metadata?.log?.message ? `<p><strong>Log Message:</strong> ${metadata.log.message}</p>` : ''}
+              </div>
+            </div>
+          `,
+                    text: `${title}\n\nSeverity: ${severity.toUpperCase()}\nMessage: ${message}\nTriggered: ${timestamp}\n${environment ? `Environment: ${environment}\n` : ''}${metadata?.log?.message ? `Log Message: ${metadata.log.message}` : ''}`
+                };
+            case 'slack':
+                return {
+                    text: `Alert: ${title}`,
+                    attachments: [{
+                            color: severity === 'critical' ? 'danger' : severity === 'warning' ? 'warning' : 'good',
+                            fields: [
+                                { title: 'Severity', value: severity.toUpperCase(), short: true },
+                                { title: 'Status', value: alert.status || 'Active', short: true },
+                                { title: 'Message', value: message, short: false },
+                                ...(environment ? [{ title: 'Environment', value: environment, short: true }] : []),
+                                ...(metadata?.rule?.name ? [{ title: 'Rule', value: metadata.rule.name, short: true }] : []),
+                            ],
+                            footer: 'Alert System',
+                            ts: Math.floor(new Date(triggeredAt).getTime() / 1000)
+                        }]
+                };
+            case 'webhook':
+                return {
+                    type: 'alert.triggered',
+                    alert,
+                    timestamp: new Date().toISOString(),
+                    formatted: {
+                        title,
+                        message,
+                        severity,
+                        triggeredAt,
+                        environment
+                    }
+                };
+            default:
+                return alert;
+        }
+    }
+    /**
+     * Get notification statistics
+     */
+    static getNotificationStats() {
+        const now = Date.now();
+        const stats = {
+            rateLimits: {},
+            totalTracked: Object.keys(this.rateLimitTracker).length,
+        };
+        Object.entries(this.rateLimitTracker).forEach(([key, tracker]) => {
+            const [channel] = key.split(':');
+            if (!stats.rateLimits[channel]) {
+                stats.rateLimits[channel] = { minute: 0, hour: 0 };
+            }
+            if (tracker.minute.resetTime > now) {
+                stats.rateLimits[channel].minute += tracker.minute.count;
+            }
+            if (tracker.hour.resetTime > now) {
+                stats.rateLimits[channel].hour += tracker.hour.count;
+            }
+        });
+        return stats;
+    }
+    /**
+     * Clear rate limit tracking (useful for testing)
+     */
+    static clearRateLimits() {
+        this.rateLimitTracker = {};
+    }
+    // === PRIVATE HELPER METHODS ===
+    static checkRateLimit(channel, identifier) {
+        if (!this.config.rateLimiting?.enabled)
+            return true;
+        const key = `${channel}:${identifier}`;
+        const now = Date.now();
+        const tracker = this.rateLimitTracker[key] || {
+            minute: { count: 0, resetTime: now + 60000 },
+            hour: { count: 0, resetTime: now + 3600000 }
+        };
+        // Reset counters if time has passed
+        if (tracker.minute.resetTime <= now) {
+            tracker.minute = { count: 0, resetTime: now + 60000 };
+        }
+        if (tracker.hour.resetTime <= now) {
+            tracker.hour = { count: 0, resetTime: now + 3600000 };
+        }
+        // Check limits
+        const maxPerMinute = this.config.rateLimiting.maxPerMinute || 60;
+        const maxPerHour = this.config.rateLimiting.maxPerHour || 500;
+        if (tracker.minute.count >= maxPerMinute || tracker.hour.count >= maxPerHour) {
+            return false;
+        }
+        // Increment counters
+        tracker.minute.count++;
+        tracker.hour.count++;
+        this.rateLimitTracker[key] = tracker;
+        return true;
+    }
+    static async makeHttpRequest(options) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+        try {
+            const response = await fetch(options.url, {
+                method: options.method,
+                headers: options.headers,
+                body: options.body,
+                signal: controller.signal,
+            });
+            return response;
+        }
+        finally {
+            clearTimeout(timeoutId);
+        }
+    }
+    static async makeHttpRequestWithRetry(options, retries) {
+        let lastError;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const response = await this.makeHttpRequest(options);
+                // Don't retry on client errors (4xx), only server errors (5xx) or network issues
+                if (response.ok || (response.status >= 400 && response.status < 500)) {
+                    return response;
+                }
+                lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            catch (error) {
+                lastError = error;
+            }
+            // Wait before retrying (exponential backoff)
+            if (attempt < retries) {
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            }
+        }
+        throw lastError;
+    }
+    // Email provider implementations
+    static async sendEmailViaSendGrid(options) {
+        // Implementation would use @sendgrid/mail
+        console.log('[SendGrid] Not implemented, falling back to console');
+        console.log(`[Email] To: ${options.to.join(', ')}, Subject: ${options.subject}`);
+        return { success: true, channel: 'email' };
+    }
+    static async sendEmailViaSES(options) {
+        // Implementation would use AWS SDK
+        console.log('[SES] Not implemented, falling back to console');
+        console.log(`[Email] To: ${options.to.join(', ')}, Subject: ${options.subject}`);
+        return { success: true, channel: 'email' };
+    }
+    static async sendEmailViaSMTP(options) {
+        const startTime = Date.now();
+        try {
+            const info = await this.transporter.sendMail({
+                from: `"${this.config.email?.fromName || 'LogHive'}" <${this.config.email?.fromEmail || process.env.SMTP_FROM || 'no-reply@loghive.com'}>`,
+                to: options.to.join(", "),
+                cc: options.cc?.join(", "),
+                bcc: options.bcc?.join(", "),
+                subject: options.subject,
+                text: options.text,
+                html: options.html,
+                attachments: options.attachments,
+            });
+            console.log(`[Notification] Email sent: ${info.messageId}`);
+            return {
+                success: true,
+                channel: 'email',
+                duration: Date.now() - startTime,
+            };
+        }
+        catch (error) {
+            console.error("[Notification] Email failed:", error);
+            return {
+                success: false,
+                channel: 'email',
+                error: error.message,
+                duration: Date.now() - startTime,
+            };
         }
     }
 }

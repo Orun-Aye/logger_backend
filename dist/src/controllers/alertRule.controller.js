@@ -21,7 +21,7 @@ class AlertRuleController {
             }
             const rule = await alertRule_service_1.AlertRuleService.createRule({
                 ...req.body,
-                projectId: req.projectId,
+                projectId: req.body.projectId
             });
             res.status(201).json({ status: "success", data: rule });
         }
@@ -44,7 +44,8 @@ class AlertRuleController {
     }
     static async getRuleByProject(req, res) {
         try {
-            const rules = await alertRule_service_1.AlertRuleService.getRulesByProject(req.projectId);
+            const projectId = req.params.projectId;
+            const rules = await alertRule_service_1.AlertRuleService.getRulesByProject(projectId);
             res.status(200).json({ status: "success", data: rules });
         }
         catch (err) {
