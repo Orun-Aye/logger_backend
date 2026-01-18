@@ -36,7 +36,7 @@ export class AlertRuleController {
 
       const rule = await AlertRuleService.createRule({
         ...(req.body as CreateAlertRuleDTO),
-        projectId: req.projectId,
+        projectId: req.body.projectId
       });
       res.status(201).json({ status: "success", data: rule });
     } catch (err) {
@@ -61,7 +61,8 @@ export class AlertRuleController {
 
   static async getRuleByProject(req: Request, res: Response) {
     try {
-      const rules = await AlertRuleService.getRulesByProject(req.projectId);
+      const projectId = req.params.projectId
+      const rules = await AlertRuleService.getRulesByProject(projectId);
       res.status(200).json({ status: "success", data: rules });
     } catch (err) {
       res

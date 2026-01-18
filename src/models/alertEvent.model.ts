@@ -9,7 +9,9 @@ export interface IAlertEvent extends Document {
   severity: "info" | "warning" | "critical";
   notifyChannels?: ("email" | "slack" | "webhook")[];
   metadata?: Record<string, any>;
-  acknowledged?: boolean;
+  status?: "active" | "acknowledged" | "resolved" | "snoozed";
+  tags?: string[];
+  environment?: string;
   acknowledgedAt?: Date;
   triggeredAt: Date;
   createdAt?: Date;
@@ -25,8 +27,9 @@ const AlertEventSchema: Schema<IAlertEvent> = new Schema(
     message: { type: String, required: true },
     severity: { type: String, enum: ["info", "warning", "critical"], default: "warning", index: true },
     notifyChannels: { type: [String], enum: ["email", "slack", "webhook"], default: ["email"] },
+    tags: { type: [String]},
     metadata: { type: Schema.Types.Mixed },
-    acknowledged: { type: Boolean, default: false },
+    status: { type: String, enum: ["active", "acknowledged", "resolved", "snoozed"], default: "active" },
     acknowledgedAt: { type: Date },
     triggeredAt: { type: Date, default: () => new Date() },
   },

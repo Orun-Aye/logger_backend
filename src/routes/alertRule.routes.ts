@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { AlertRuleController } from "../controllers/alertRule.controller";
-import { authenticateApiKey } from "../middleware/auth.middleware";
+import { verifyToken } from "../middleware/auth.middleware";
 
 const router = Router();
 
+router.use(verifyToken);
 
 router.post("/", AlertRuleController.create);
-router.get("/", AlertRuleController.getRuleByProject);
+router.get("/:projectId", AlertRuleController.getRuleByProject);
 router.get("/:id", AlertRuleController.getRuleById);
 router.put("/:id", AlertRuleController.update);
 router.delete("/:id", AlertRuleController.delete);
