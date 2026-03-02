@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { Request, Response } from "express";
 import {
   ProjectService,
@@ -949,12 +947,12 @@ export class ProjectController {
         } as ApiResponse);
       }
 
-      const result = await ProjectService.bulkUpdateProjects(ids, updateData);
+      // TODO: Implement bulkUpdateProjects in ProjectService
+      // const result = await ProjectService.bulkUpdateProjects(ids, updateData);
 
-      return res.status(200).json({
-        status: "success",
-        message: "Bulk update completed successfully",
-        data: result,
+      return res.status(501).json({
+        status: "error",
+        message: "Bulk update not yet implemented",
       } as ApiResponse);
     } catch (error) {
       return ProjectController.handleError(

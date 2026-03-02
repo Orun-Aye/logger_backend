@@ -1,6 +1,4 @@
 // src/controllers/dashboard.controller.ts
-// @ts-nocheck
-
 
 import { Request, Response } from "express";
 import {

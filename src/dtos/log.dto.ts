@@ -52,7 +52,9 @@ export interface CreateLogDTO {
 export interface FilterLogsDTO {
   projectId?: string; // Made optional here, but will be enforced in methods that need it
   level?: LogLevel;
+  levels?: LogLevel[]; // Support multiple levels
   service?: string;
+  services?: string[]; // Support multiple services
   environment?: string;
   search?: string; // for message
   startDate?: Date;

@@ -3,7 +3,7 @@
 import { AlertRuleModel, IAlertRules } from "../models/alertRule.model";
 import { CreateAlertRuleDTO, UpdateAlertRuleDTO } from "../dtos/alertRule.dto";
 import { Types } from "mongoose";
-import { LogModel } from "../models/log.model";
+import { ProjectModel } from "../models/project.model";
 
 export class RuleNotFoundError extends Error {
   constructor(id: Types.ObjectId) {
@@ -35,27 +35,14 @@ export class AlertRuleService {
     projectId: Types.ObjectId
   ): Promise<boolean> {
     try {
-      // Option 1: If you have a Project model
-      // import { ProjectModel } from "../models/project.model";
-      // const project = await ProjectModel.findById(projectId);
-      // return !!project;
-
-      // Option 3: Check if projectId exists in logs (assuming projects are created when first log is sent)
-      // import { LogModel } from "../models/log.model";
-      // const logExists = await LogModel.findOne({ projectId });
-      // return !!logExists;
-
-      // Option 4: Simple ObjectId validation (basic check)
       if (!Types.ObjectId.isValid(projectId)) {
         return false;
       }
 
-      // For demonstration, I'll use Option 3 - checking against existing logs
-      // Replace this with your actual project validation logic
-      const projectExists = await LogModel.findOne({ projectId })
+      const project = await ProjectModel.findById(projectId)
         .select("_id")
         .lean();
-      return !!projectExists;
+      return !!project;
     } catch (error) {
       console.error("Error validating project ID:", error);
       return false;
@@ -119,23 +106,25 @@ export class AlertRuleService {
     }
   }
 
-  static async getRulesByProject(projectId: Types.ObjectId) {
+  static async getRulesByProject(projectId: string | Types.ObjectId) {
     try {
       // Validate projectId format
       if (!Types.ObjectId.isValid(projectId)) {
         throw new RuleServiceError("Invalid Project ID format");
       }
 
+      const projectObjectId = new Types.ObjectId(projectId);
+
       // Validate project exists
-      const isValidProject = await this.validateProjectId(projectId);
+      const isValidProject = await this.validateProjectId(projectObjectId);
       if (!isValidProject) {
-        throw new ProjectNotFoundError(projectId);
+        throw new ProjectNotFoundError(projectObjectId);
       }
 
-      const rules = await AlertRuleModel.find({ projectId });
+      const rules = await AlertRuleModel.find({ projectId: projectObjectId });
 
       if (!rules) {
-        throw new RuleNotFoundError(projectId);
+        throw new RuleNotFoundError(projectObjectId);
       }
 
       return rules;
@@ -151,16 +140,18 @@ export class AlertRuleService {
     }
   }
 
-  static async getRuleById(ruleId: Types.ObjectId) {
+  static async getRuleById(ruleId: string | Types.ObjectId) {
     try {
       if (!Types.ObjectId.isValid(ruleId)) {
         throw new RuleServiceError("Invalid Rule ID");
       }
 
-      const rule = await AlertRuleModel.findById(ruleId).select("-__v").lean();
+      const ruleObjectId = new Types.ObjectId(ruleId);
+
+      const rule = await AlertRuleModel.findById(ruleObjectId).select("-__v").lean();
 
       if (!rule) {
-        throw new RuleNotFoundError(ruleId);
+        throw new RuleNotFoundError(ruleObjectId);
       }
 
       return rule as IAlertRules;
@@ -180,7 +171,7 @@ export class AlertRuleService {
    * Updates an alert rule
    */
   static async updateRule(
-    ruleId: Types.ObjectId,
+    ruleId: string | Types.ObjectId,
     data: UpdateAlertRuleDTO
   ): Promise<IAlertRules> {
     try {
@@ -188,9 +179,11 @@ export class AlertRuleService {
         throw new RuleServiceError("Invalid Rule ID format");
       }
 
-      const existingRule = await AlertRuleModel.findById(ruleId);
+      const ruleObjectId = new Types.ObjectId(ruleId);
+
+      const existingRule = await AlertRuleModel.findById(ruleObjectId);
       if (!existingRule) {
-        throw new RuleNotFoundError(ruleId);
+        throw new RuleNotFoundError(ruleObjectId);
       }
 
       // If projectId is being updated, validate the new projectId
@@ -210,7 +203,7 @@ export class AlertRuleService {
         const existingWithName = await AlertRuleModel.findOne({
           projectId: data.projectId || existingRule.projectId,
           name: data.name,
-          _id: { $ne: ruleId }
+          _id: { $ne: ruleObjectId }
         });
 
         if (existingWithName) {
@@ -239,7 +232,7 @@ export class AlertRuleService {
       }
 
       const updatedRule = await AlertRuleModel.findByIdAndUpdate(
-        ruleId,
+        ruleObjectId,
         updateData,
         {
           new: true,
@@ -249,7 +242,7 @@ export class AlertRuleService {
       ).lean();
 
       if (!updatedRule) {
-        throw new RuleNotFoundError(ruleId);
+        throw new RuleNotFoundError(ruleObjectId);
       }
 
       return updatedRule as IAlertRules;
@@ -267,15 +260,21 @@ export class AlertRuleService {
     }
   }
 
-  static async deleteRule(ruleId: Types.ObjectId) {
+  static async deleteRule(ruleId: string | Types.ObjectId) {
     try {
-      const deletedRule = await AlertRuleModel.findByIdAndDelete(ruleId);
-
-      if (!deletedRule) {
-        throw new RuleNotFoundError(ruleId);
+      if (!Types.ObjectId.isValid(ruleId)) {
+        throw new RuleServiceError("Invalid Rule ID format");
       }
 
-      return { success: true, deletedId: ruleId };
+      const ruleObjectId = new Types.ObjectId(ruleId);
+
+      const deletedRule = await AlertRuleModel.findByIdAndDelete(ruleObjectId);
+
+      if (!deletedRule) {
+        throw new RuleNotFoundError(ruleObjectId);
+      }
+
+      return { success: true, deletedId: ruleObjectId };
     } catch (error) {
       if (
         error instanceof RuleNotFoundError ||

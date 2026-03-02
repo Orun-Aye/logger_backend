@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { Request, Response, NextFunction } from "express";
 import { ProjectModel } from "../models/project.model";
 import { Types } from "mongoose";
@@ -9,7 +7,7 @@ export async function authorizeProjectAccess(
   res: Response,
   next: NextFunction
 ) {
-  const userId = req.userId || req.user?._id;
+  const userId = req.userId;
   const projectId = req.params.projectId;
 
   const project = await ProjectModel.findById(projectId).populate(

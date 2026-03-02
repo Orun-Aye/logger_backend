@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { Request, Response } from "express";
 import {
   AlertRuleService,
@@ -54,7 +52,7 @@ export class AlertRuleController {
       res.status(500).json({
         status: "error",
         message: "Failed to create alert rule.",
-        details: err.message, // Include for debugging
+        details: (err as Error).message, // Include for debugging
       });
     }
   }

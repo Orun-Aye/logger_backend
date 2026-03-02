@@ -11,6 +11,7 @@ import dashboardRoutes from "./routes/dashboard.routes";
 import analyticsRoutes from "./routes/analytics.routes";
 import alertEventRoutes from "./routes/alertEvent.routes";
 import notificationRoutes from "./routes/notification.routes";
+import insightsRoutes from "./routes/insights.routes";
 import { createServer } from "http";
 import { DashboardWebSocketService } from "./services/websocket.service";
 import { LogService } from "./services/log.service";
@@ -29,8 +30,8 @@ const isVercel = process.env.VERCEL === "1";
 // CORS configuration for dashboard/admin routes (restricted)
 const restrictedCors = cors({
   origin: ["https://loghive.vercel.app", "http://localhost:3000"],
-  methods: ["POST", "PUT"],
-  credentials: false,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 
@@ -462,7 +463,8 @@ app.use("/api/v1/alert-rules", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
 app.use("/api/v1/alerts", restrictedCors, alertEventRoutes);
 app.use("/api/v1/notifications", restrictedCors, notificationRoutes);
-app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/analytics', restrictedCors, analyticsRoutes);
+app.use("/api/v1/insights", restrictedCors, insightsRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);

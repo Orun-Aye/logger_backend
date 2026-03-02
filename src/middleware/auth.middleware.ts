@@ -1,11 +1,13 @@
-// @ts-nocheck
-
 import { NextFunction, Request, Response } from "express";
 import { ProjectModel } from "../models/project.model";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+interface JwtPayload {
+  userId: string;
+}
 
 export async function verifyToken(
   req: Request,
@@ -26,8 +28,17 @@ export async function verifyToken(
     ? authHeader.slice(7)
     : authHeader;
 
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    return res.status(500).json({
+      status: "error",
+      code: "SERVER_ERROR",
+      message: "Authentication service misconfigured",
+    });
+  }
+
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, secret) as JwtPayload;
     req.userId = decoded.userId;
   } catch (error) {
     return res.status(401).json({
@@ -47,7 +58,7 @@ export async function authenticateApiKey(
   const apiKey = req.headers["x-api-key"] as string;
   if (!apiKey) {
     return res.status(401).json({
-      status: "error1",
+      status: "error",
       code: "UNAUTHORIZED",
       message: "API key is required",
     });
@@ -62,6 +73,6 @@ export async function authenticateApiKey(
     });
   }
 
-  req.projectId = project._id.toString(); // Also set it on the request object for convenience
+  req.projectId = project._id.toString();
   next();
 }

@@ -7,7 +7,7 @@ const router = Router();
 router.use(verifyToken);
 
 router.post("/", AlertRuleController.create);
-router.get("/:projectId", AlertRuleController.getRuleByProject);
+router.get("/project/:projectId", AlertRuleController.getRuleByProject);
 router.get("/:id", AlertRuleController.getRuleById);
 router.put("/:id", AlertRuleController.update);
 router.delete("/:id", AlertRuleController.delete);

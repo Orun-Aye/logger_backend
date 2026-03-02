@@ -72,6 +72,12 @@ router.get('/:projectId/activity/stream', AnalyticsController.streamActivity);
 // SESSION ANALYTICS - Dashboard 4
 // ============================================================================
 
+// Get session statistics (must be before /:sessionId to avoid being caught by it)
+router.get('/:projectId/sessions/stats', AnalyticsController.getSessionStats);
+
+// Get user journey (aggregated session flow)
+router.get('/:projectId/sessions/journeys', AnalyticsController.getUserJourneys);
+
 // Get recent sessions list
 router.get('/:projectId/sessions', AnalyticsController.getSessions);
 
@@ -80,12 +86,6 @@ router.get('/:projectId/sessions/:sessionId', AnalyticsController.getSessionDeta
 
 // Get session timeline events
 router.get('/:projectId/sessions/:sessionId/timeline', AnalyticsController.getSessionTimeline);
-
-// Get session statistics
-router.get('/:projectId/sessions/stats', AnalyticsController.getSessionStats);
-
-// Get user journey (aggregated session flow)
-router.get('/:projectId/sessions/journeys', AnalyticsController.getUserJourneys);
 
 // ============================================================================
 // CROSS-DASHBOARD UTILITIES

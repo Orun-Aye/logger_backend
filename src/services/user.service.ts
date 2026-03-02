@@ -138,8 +138,8 @@ export class UserService {
         joinedAt: user.joinedAt,
       };
     } catch (error) {
-      if (error instanceof UserValidationError) {
-        throw error; // Re-throw validation errors
+      if (error instanceof UserValidationError || error instanceof UserNotFoundError) {
+        throw error;
       }
       throw new Error(`Failed to login user: ${error}`);
     }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Types } from "mongoose";
 import nodemailer from "nodemailer";
 import Notification from "../models/notification.model";
@@ -189,7 +188,7 @@ export class NotificationService {
       return {
         success: false,
         channel: 'email',
-        error: error.message,
+        error: (error as Error).message,
         duration: Date.now() - startTime
       };
     }
@@ -243,7 +242,7 @@ export class NotificationService {
       return {
         success: false,
         channel: 'slack',
-        error: error.message,
+        error: (error as Error).message,
         duration: Date.now() - startTime,
       };
     }
@@ -278,7 +277,7 @@ export class NotificationService {
       return {
         success: false,
         channel: 'discord',
-        error: error.message,
+        error: (error as Error).message,
         duration: Date.now() - startTime,
       };
     }
@@ -366,7 +365,7 @@ export class NotificationService {
             finalHeaders['Authorization'] = `Basic ${basicAuth}`;
             break;
           case 'api-key':
-            finalHeaders[authentication.headerName || 'X-API-Key'] = authentication.apiKey;
+            finalHeaders[authentication.headerName || 'X-API-Key'] = authentication.apiKey || '';
             break;
         }
       }
@@ -390,7 +389,7 @@ export class NotificationService {
       return {
         success: false,
         channel: 'webhook',
-        error: error.message,
+        error: (error as Error).message,
         duration: Date.now() - startTime,
       };
     }
@@ -658,7 +657,7 @@ export class NotificationService {
       return {
         success: false,
         channel: 'email',
-        error: error.message,
+        error: (error as Error).message,
         duration: Date.now() - startTime,
       };
     }

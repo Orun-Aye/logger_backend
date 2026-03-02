@@ -6,7 +6,7 @@ export interface CreateProjectDTO {
 
 export interface UpdateProjectDTO {
     name?: string;
-    desccription?: string;
+    description?: string;
     isActive?: boolean;
     tags?: string[];
 }

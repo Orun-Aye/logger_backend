@@ -1,11 +1,14 @@
-// @ts-nocheck
 import { Types } from "mongoose";
 import { AlertRuleModel } from "../models/alertRule.model";
-import { AlertEventModel } from "../models/alertEvent.model";
+import { AlertEventModel, IAlertEvent } from "../models/alertEvent.model";
 import { LogModel, ILog } from "../models/log.model";
 import { ProjectModel } from "../models/project.model";
 import { NotificationService } from "./notification.service";
 import { globalServices } from "../server";
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 type RuleCondition = {
   level?: string;
@@ -71,7 +74,7 @@ export class AlertService {
             Date.now() - condition.intervalMinutes * 60 * 1000
           ).toISOString();
           const keywordFilter = condition.keyword
-            ? { message: { $regex: condition.keyword, $options: "i" } }
+            ? { message: { $regex: escapeRegex(condition.keyword), $options: "i" } }
             : {};
           const count = await LogModel.countDocuments({
             projectId: log.projectId,
@@ -85,7 +88,7 @@ export class AlertService {
         // Check for duplicate alerts to prevent spam
         const isDuplicate = await this.isDuplicateAlert(
           projectId,
-          rule._id,
+          rule._id as Types.ObjectId,
           log
         );
         if (isDuplicate) continue;
@@ -284,18 +287,18 @@ export class AlertService {
     ]);
 
     // Process results
-    const statusMap = statusStats.reduce((acc, item) => {
+    const statusMap = statusStats.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
       acc[item._id] = item.count;
       return acc;
     }, {} as Record<string, number>);
 
-    const severityMap = severityStats.reduce((acc, item) => {
+    const severityMap = severityStats.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
       acc[item._id] = item.count;
       return acc;
     }, {} as Record<string, number>);
 
-    const total = Object.values(statusMap).reduce(
-      (sum, count) => sum + count,
+    const total: number = (Object.values(statusMap) as number[]).reduce(
+      (sum: number, count: number) => sum + count,
       0
     );
 
@@ -327,13 +330,12 @@ export class AlertService {
     userId?: string
   ) {
     const updateData: any = {
-      status,
-      updatedAt: new Date(),
+      $set: {
+        status,
+        updatedAt: new Date(),
+        ...(status === "acknowledged" ? { acknowledgedAt: new Date() } : {}),
+      },
     };
-
-    if (status === "acknowledged") {
-      updateData.acknowledgedAt = new Date();
-    }
 
     if (userId) {
       updateData.$push = {

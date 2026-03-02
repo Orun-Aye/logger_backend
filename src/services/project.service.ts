@@ -1431,8 +1431,8 @@ export class ProjectService {
           throw new ProjectNotFoundError(id);
         }
 
-        // TODO: Consider also deleting associated logs
-        LogModel.deleteMany({ projectId: id });
+        // Delete associated logs
+        await LogModel.deleteMany({ projectId: id });
 
         return { success: true, deletedId: id, type: "hard" };
       }

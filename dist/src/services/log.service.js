@@ -55,10 +55,20 @@ class LogService {
             this.validateObjectId(filters.projectId); // Validate project ID
             query.projectId = filters.projectId;
         }
-        if (filters.level)
+        // Support both single level and multiple levels
+        if (filters.levels && filters.levels.length > 0) {
+            query.level = { $in: filters.levels };
+        }
+        else if (filters.level) {
             query.level = filters.level;
-        if (filters.service)
+        }
+        // Support both single service and multiple services
+        if (filters.services && filters.services.length > 0) {
+            query.service = { $in: filters.services };
+        }
+        else if (filters.service) {
             query.service = filters.service;
+        }
         if (filters.environment)
             query.environment = filters.environment;
         if (filters.eventType)

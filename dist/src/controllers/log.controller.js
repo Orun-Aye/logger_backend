@@ -74,7 +74,27 @@ class LogController {
             Object.values(log_dto_1.LogLevel).includes(req.query.level)
             ? req.query.level
             : undefined;
+        // Support multiple levels (e.g., ?levels=error&levels=warn)
+        let levels;
+        if (req.query.levels) {
+            const levelsParam = Array.isArray(req.query.levels)
+                ? req.query.levels
+                : [req.query.levels];
+            levels = levelsParam.filter((l) => typeof l === "string" && Object.values(log_dto_1.LogLevel).includes(l));
+            if (levels.length === 0)
+                levels = undefined;
+        }
         const service = typeof req.query.service === "string" ? req.query.service : undefined;
+        // Support multiple services (e.g., ?services=api&services=web)
+        let services;
+        if (req.query.services) {
+            const servicesParam = Array.isArray(req.query.services)
+                ? req.query.services
+                : [req.query.services];
+            services = servicesParam.filter((s) => typeof s === "string");
+            if (services.length === 0)
+                services = undefined;
+        }
         const environment = typeof req.query.environment === "string" ? req.query.environment : undefined;
         const search = typeof req.query.search === "string" ? req.query.search : undefined;
         const startDate = typeof req.query.startDate === "string"
@@ -97,7 +117,9 @@ class LogController {
             sortBy,
             sortOrder,
             level,
+            levels,
             service,
+            services,
             environment,
             search,
             startDate,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from "express";
 import { AlertService } from "../services/alert.service";
 import { Types } from "mongoose";
@@ -17,8 +16,8 @@ export class AlertEventController {
 
       const filters = {
         projectId,
-        severity: req.query.severity as string,
-        status: req.query.status as string,
+        severity: req.query.severity as "info" | "warning" | "critical" | undefined,
+        status: req.query.status as "active" | "acknowledged" | "resolved" | "snoozed" | undefined,
         ruleId: req.query.ruleId as string,
         startDate: req.query.startDate as string,
         endDate: req.query.endDate as string,
@@ -53,7 +52,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to fetch alerts',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -86,7 +85,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to fetch alert statistics',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -99,7 +98,7 @@ export class AlertEventController {
     try {
       const { alertId } = req.params;
       const { status } = req.body;
-      const userId = req.user?.id; // Assuming user info is available on req
+      const userId = req.userId; // Assuming user info is available on req
 
       if (!Types.ObjectId.isValid(alertId)) {
         return res.status(400).json({
@@ -134,7 +133,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to update alert status',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -146,7 +145,7 @@ export class AlertEventController {
   static async bulkUpdateAlerts(req: Request, res: Response) {
     try {
       const { alertIds, status } = req.body;
-      const userId = req.user?.id;
+      const userId = req.userId;
 
       if (!Array.isArray(alertIds) || alertIds.length === 0) {
         return res.status(400).json({
@@ -186,7 +185,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to bulk update alerts',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -198,7 +197,7 @@ export class AlertEventController {
   static async deleteAlerts(req: Request, res: Response) {
     try {
       const { alertIds } = req.body;
-      const softDelete = req.query.soft === 'true';
+      const softDelete = req.query.soft !== 'false';
 
       if (!Array.isArray(alertIds) || alertIds.length === 0) {
         return res.status(400).json({
@@ -221,17 +220,17 @@ export class AlertEventController {
       res.status(200).json({
         status: 'success',
         data: {
-          deletedCount: softDelete ? result.modifiedCount : result.deletedCount,
+          deletedCount: softDelete ? (result as any).modifiedCount : (result as any).deletedCount,
           softDelete
         },
-        message: `${softDelete ? result.modifiedCount : result.deletedCount} alerts ${softDelete ? 'soft deleted' : 'deleted'} successfully`
+        message: `${softDelete ? (result as any).modifiedCount : (result as any).deletedCount} alerts ${softDelete ? 'soft deleted' : 'deleted'} successfully`
       });
     } catch (err) {
       console.error('Failed to delete alerts:', err);
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to delete alerts',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -270,7 +269,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to get distinct values',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -306,7 +305,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to auto-resolve old alerts',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }
@@ -318,7 +317,7 @@ export class AlertEventController {
   static async acknowledge(req: Request, res: Response) {
     try {
       const { alertId, alertIds } = req.body;
-      const userId = req.user?.id;
+      const userId = req.userId;
 
       // Handle single alert ID (legacy)
       if (alertId && !alertIds) {
@@ -361,7 +360,7 @@ export class AlertEventController {
       res.status(500).json({ 
         status: 'error', 
         message: 'Failed to acknowledge alert(s)',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (err as Error).message : undefined
       });
     }
   }

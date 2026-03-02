@@ -112,7 +112,29 @@ export class LogController {
         ? (req.query.level as LogLevel)
         : undefined;
 
+    // Support multiple levels (e.g., ?levels=error&levels=warn)
+    let levels: LogLevel[] | undefined;
+    if (req.query.levels) {
+      const levelsParam = Array.isArray(req.query.levels)
+        ? req.query.levels
+        : [req.query.levels];
+      levels = levelsParam.filter(
+        (l): l is LogLevel => typeof l === "string" && Object.values(LogLevel).includes(l as LogLevel)
+      ) as LogLevel[];
+      if (levels.length === 0) levels = undefined;
+    }
+
     const service = typeof req.query.service === "string" ? req.query.service : undefined;
+
+    // Support multiple services (e.g., ?services=api&services=web)
+    let services: string[] | undefined;
+    if (req.query.services) {
+      const servicesParam = Array.isArray(req.query.services)
+        ? req.query.services
+        : [req.query.services];
+      services = servicesParam.filter((s): s is string => typeof s === "string");
+      if (services.length === 0) services = undefined;
+    }
     const environment = typeof req.query.environment === "string" ? req.query.environment : undefined;
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
@@ -141,7 +163,9 @@ export class LogController {
       sortBy,
       sortOrder,
       level,
+      levels,
       service,
+      services,
       environment,
       search,
       startDate,

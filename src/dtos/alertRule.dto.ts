@@ -8,7 +8,7 @@ export interface CreateAlertRuleDTO {
   projectId:  Types.ObjectId;
   condition: {
     level: string; // e.g. "level"
-    keyword: number;
+    keyword: string;
     frequency?: number;
     intervalMinutes: number;
   };
@@ -22,7 +22,7 @@ export interface UpdateAlertRuleDTO {
   projectId: Types.ObjectId
   condition?: {
     level: string; // e.g. "level"
-    keyword: number;
+    keyword: string;
     frequency?: number;
     intervalMinutes: number;
   };
