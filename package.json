@@ -32,7 +32,10 @@
     "openai": "^5.10.2",
     "redis": "^5.6.1",
     "socket.io": "^4.8.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

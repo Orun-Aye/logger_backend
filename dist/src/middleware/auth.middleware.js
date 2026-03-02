@@ -1,5 +1,4 @@
 "use strict";
-// @ts-nocheck
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -23,8 +22,16 @@ async function verifyToken(req, res, next) {
     const token = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : authHeader;
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        return res.status(500).json({
+            status: "error",
+            code: "SERVER_ERROR",
+            message: "Authentication service misconfigured",
+        });
+    }
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        const decoded = jsonwebtoken_1.default.verify(token, secret);
         req.userId = decoded.userId;
     }
     catch (error) {
@@ -40,7 +47,7 @@ async function authenticateApiKey(req, res, next) {
     const apiKey = req.headers["x-api-key"];
     if (!apiKey) {
         return res.status(401).json({
-            status: "error1",
+            status: "error",
             code: "UNAUTHORIZED",
             message: "API key is required",
         });
@@ -53,6 +60,6 @@ async function authenticateApiKey(req, res, next) {
             message: "The provided API key is invalid.",
         });
     }
-    req.projectId = project._id.toString(); // Also set it on the request object for convenience
+    req.projectId = project._id.toString();
     next();
 }

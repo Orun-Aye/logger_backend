@@ -1,5 +1,4 @@
 "use strict";
-// @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProjectController = void 0;
 const project_service_1 = require("../services/project.service");
@@ -729,11 +728,11 @@ class ProjectController {
                     message: "Update data is required",
                 });
             }
-            const result = await project_service_1.ProjectService.bulkUpdateProjects(ids, updateData);
-            return res.status(200).json({
-                status: "success",
-                message: "Bulk update completed successfully",
-                data: result,
+            // TODO: Implement bulkUpdateProjects in ProjectService
+            // const result = await ProjectService.bulkUpdateProjects(ids, updateData);
+            return res.status(501).json({
+                status: "error",
+                message: "Bulk update not yet implemented",
             });
         }
         catch (error) {

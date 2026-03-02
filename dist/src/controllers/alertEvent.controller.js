@@ -93,7 +93,7 @@ class AlertEventController {
         try {
             const { alertId } = req.params;
             const { status } = req.body;
-            const userId = req.user?.id; // Assuming user info is available on req
+            const userId = req.userId; // Assuming user info is available on req
             if (!mongoose_1.Types.ObjectId.isValid(alertId)) {
                 return res.status(400).json({
                     status: 'error',
@@ -135,7 +135,7 @@ class AlertEventController {
     static async bulkUpdateAlerts(req, res) {
         try {
             const { alertIds, status } = req.body;
-            const userId = req.user?.id;
+            const userId = req.userId;
             if (!Array.isArray(alertIds) || alertIds.length === 0) {
                 return res.status(400).json({
                     status: 'error',
@@ -182,7 +182,7 @@ class AlertEventController {
     static async deleteAlerts(req, res) {
         try {
             const { alertIds } = req.body;
-            const softDelete = req.query.soft === 'true';
+            const softDelete = req.query.soft !== 'false';
             if (!Array.isArray(alertIds) || alertIds.length === 0) {
                 return res.status(400).json({
                     status: 'error',
@@ -291,7 +291,7 @@ class AlertEventController {
     static async acknowledge(req, res) {
         try {
             const { alertId, alertIds } = req.body;
-            const userId = req.user?.id;
+            const userId = req.userId;
             // Handle single alert ID (legacy)
             if (alertId && !alertIds) {
                 const updatedAlert = await alert_service_1.AlertService.updateAlertStatus(alertId, 'acknowledged', userId);

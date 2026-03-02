@@ -1,6 +1,5 @@
 "use strict";
 // src/controllers/dashboard.controller.ts
-// @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dashboardValidation = exports.DashboardController = void 0;
 const dashboard_service_1 = require("../services/dashboard.service");

@@ -1,10 +1,9 @@
 "use strict";
-// @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authorizeProjectAccess = authorizeProjectAccess;
 const project_model_1 = require("../models/project.model");
 async function authorizeProjectAccess(req, res, next) {
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId;
     const projectId = req.params.projectId;
     const project = await project_model_1.ProjectModel.findById(projectId).populate("teamMembers.user");
     if (!project) {

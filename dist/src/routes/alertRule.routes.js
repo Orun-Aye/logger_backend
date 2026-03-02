@@ -6,7 +6,7 @@ const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.post("/", alertRule_controller_1.AlertRuleController.create);
-router.get("/:projectId", alertRule_controller_1.AlertRuleController.getRuleByProject);
+router.get("/project/:projectId", alertRule_controller_1.AlertRuleController.getRuleByProject);
 router.get("/:id", alertRule_controller_1.AlertRuleController.getRuleById);
 router.put("/:id", alertRule_controller_1.AlertRuleController.update);
 router.delete("/:id", alertRule_controller_1.AlertRuleController.delete);

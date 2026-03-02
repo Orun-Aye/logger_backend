@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AlertRuleService = exports.ProjectNotFoundError = exports.RuleServiceError = exports.RuleNotFoundError = void 0;
 const alertRule_model_1 = require("../models/alertRule.model");
 const mongoose_1 = require("mongoose");
-const log_model_1 = require("../models/log.model");
+const project_model_1 = require("../models/project.model");
 class RuleNotFoundError extends Error {
     constructor(id) {
         super(`AlertRule with Project/ID: ${id} not found`);
@@ -33,24 +33,13 @@ class AlertRuleService {
      */
     static async validateProjectId(projectId) {
         try {
-            // Option 1: If you have a Project model
-            // import { ProjectModel } from "../models/project.model";
-            // const project = await ProjectModel.findById(projectId);
-            // return !!project;
-            // Option 3: Check if projectId exists in logs (assuming projects are created when first log is sent)
-            // import { LogModel } from "../models/log.model";
-            // const logExists = await LogModel.findOne({ projectId });
-            // return !!logExists;
-            // Option 4: Simple ObjectId validation (basic check)
             if (!mongoose_1.Types.ObjectId.isValid(projectId)) {
                 return false;
             }
-            // For demonstration, I'll use Option 3 - checking against existing logs
-            // Replace this with your actual project validation logic
-            const projectExists = await log_model_1.LogModel.findOne({ projectId })
+            const project = await project_model_1.ProjectModel.findById(projectId)
                 .select("_id")
                 .lean();
-            return !!projectExists;
+            return !!project;
         }
         catch (error) {
             console.error("Error validating project ID:", error);
@@ -110,14 +99,15 @@ class AlertRuleService {
             if (!mongoose_1.Types.ObjectId.isValid(projectId)) {
                 throw new RuleServiceError("Invalid Project ID format");
             }
+            const projectObjectId = new mongoose_1.Types.ObjectId(projectId);
             // Validate project exists
-            const isValidProject = await this.validateProjectId(projectId);
+            const isValidProject = await this.validateProjectId(projectObjectId);
             if (!isValidProject) {
-                throw new ProjectNotFoundError(projectId);
+                throw new ProjectNotFoundError(projectObjectId);
             }
-            const rules = await alertRule_model_1.AlertRuleModel.find({ projectId });
+            const rules = await alertRule_model_1.AlertRuleModel.find({ projectId: projectObjectId });
             if (!rules) {
-                throw new RuleNotFoundError(projectId);
+                throw new RuleNotFoundError(projectObjectId);
             }
             return rules;
         }
@@ -135,9 +125,10 @@ class AlertRuleService {
             if (!mongoose_1.Types.ObjectId.isValid(ruleId)) {
                 throw new RuleServiceError("Invalid Rule ID");
             }
-            const rule = await alertRule_model_1.AlertRuleModel.findById(ruleId).select("-__v").lean();
+            const ruleObjectId = new mongoose_1.Types.ObjectId(ruleId);
+            const rule = await alertRule_model_1.AlertRuleModel.findById(ruleObjectId).select("-__v").lean();
             if (!rule) {
-                throw new RuleNotFoundError(ruleId);
+                throw new RuleNotFoundError(ruleObjectId);
             }
             return rule;
         }
@@ -158,9 +149,10 @@ class AlertRuleService {
             if (!mongoose_1.Types.ObjectId.isValid(ruleId)) {
                 throw new RuleServiceError("Invalid Rule ID format");
             }
-            const existingRule = await alertRule_model_1.AlertRuleModel.findById(ruleId);
+            const ruleObjectId = new mongoose_1.Types.ObjectId(ruleId);
+            const existingRule = await alertRule_model_1.AlertRuleModel.findById(ruleObjectId);
             if (!existingRule) {
-                throw new RuleNotFoundError(ruleId);
+                throw new RuleNotFoundError(ruleObjectId);
             }
             // If projectId is being updated, validate the new projectId
             if (data.projectId && !data.projectId.equals(existingRule.projectId)) {
@@ -177,7 +169,7 @@ class AlertRuleService {
                 const existingWithName = await alertRule_model_1.AlertRuleModel.findOne({
                     projectId: data.projectId || existingRule.projectId,
                     name: data.name,
-                    _id: { $ne: ruleId }
+                    _id: { $ne: ruleObjectId }
                 });
                 if (existingWithName) {
                     throw new RuleServiceError("Alert Rule with the same name already exists for this project.");
@@ -207,13 +199,13 @@ class AlertRuleService {
                 if (data.condition.intervalMinutes !== undefined)
                     updateData.condition.intervalMinutes = data.condition.intervalMinutes;
             }
-            const updatedRule = await alertRule_model_1.AlertRuleModel.findByIdAndUpdate(ruleId, updateData, {
+            const updatedRule = await alertRule_model_1.AlertRuleModel.findByIdAndUpdate(ruleObjectId, updateData, {
                 new: true,
                 runValidators: true,
                 select: "-__v",
             }).lean();
             if (!updatedRule) {
-                throw new RuleNotFoundError(ruleId);
+                throw new RuleNotFoundError(ruleObjectId);
             }
             return updatedRule;
         }
@@ -228,11 +220,15 @@ class AlertRuleService {
     }
     static async deleteRule(ruleId) {
         try {
-            const deletedRule = await alertRule_model_1.AlertRuleModel.findByIdAndDelete(ruleId);
-            if (!deletedRule) {
-                throw new RuleNotFoundError(ruleId);
+            if (!mongoose_1.Types.ObjectId.isValid(ruleId)) {
+                throw new RuleServiceError("Invalid Rule ID format");
             }
-            return { success: true, deletedId: ruleId };
+            const ruleObjectId = new mongoose_1.Types.ObjectId(ruleId);
+            const deletedRule = await alertRule_model_1.AlertRuleModel.findByIdAndDelete(ruleObjectId);
+            if (!deletedRule) {
+                throw new RuleNotFoundError(ruleObjectId);
+            }
+            return { success: true, deletedId: ruleObjectId };
         }
         catch (error) {
             if (error instanceof RuleNotFoundError ||

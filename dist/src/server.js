@@ -5,9 +5,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.globalServices = void 0;
 const express_1 = __importDefault(require("express"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
-const db_1 = require("./utils/db");
+const http_1 = require("http");
+// Phase 1.3 Infrastructure
+const config_1 = require("./config");
+const database_config_1 = require("./config/database.config");
+const requestId_middleware_1 = require("./middleware/requestId.middleware");
+const requestLogger_middleware_1 = require("./middleware/requestLogger.middleware");
+const errorHandler_middleware_1 = require("./middleware/errorHandler.middleware");
+const query_timeout_1 = require("./utils/query-timeout");
+const logger_1 = __importDefault(require("./utils/logger"));
+// Routes
+const health_routes_1 = __importDefault(require("./routes/health.routes"));
 const project_routes_1 = __importDefault(require("./routes/project.routes"));
 const sdk_config_routes_1 = __importDefault(require("./routes/sdk-config.routes"));
 const log_routes_1 = __importDefault(require("./routes/log.routes"));
@@ -17,36 +26,40 @@ const dashboard_routes_1 = __importDefault(require("./routes/dashboard.routes"))
 const analytics_routes_1 = __importDefault(require("./routes/analytics.routes"));
 const alertEvent_routes_1 = __importDefault(require("./routes/alertEvent.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
-const http_1 = require("http");
+const insights_routes_1 = __importDefault(require("./routes/insights.routes"));
+// Services
 const websocket_service_1 = require("./services/websocket.service");
-dotenv_1.default.config();
+const db_1 = require("./utils/db");
+// Initialize configuration (validates environment variables)
+(0, config_1.initializeConfig)();
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 5000;
 const server = (0, http_1.createServer)(app);
-const JWT_SECRET = process.env.JWT_SECRET;
 // Check if running in Vercel serverless environment
 const isVercel = process.env.VERCEL === "1";
 // CORS configuration for dashboard/admin routes (restricted)
 const restrictedCors = (0, cors_1.default)({
-    origin: ["https://loghive.vercel.app", "http://localhost:3000"],
-    methods: ["POST", "PUT"],
-    credentials: false,
+    origin: config_1.config.cors.origin,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    credentials: config_1.config.cors.credentials,
     allowedHeaders: ["Content-Type", "Authorization"],
 });
 // CORS configuration for log ingestion (open to all origins)
 const logIngestionCors = (0, cors_1.default)({
     origin: true, // Allow all origins
-    methods: ["POST", "GET"], // Typically logs are POST requests
-    credentials: false, // Usually not needed for log ingestion
+    methods: ["POST", "GET"],
+    credentials: false,
     allowedHeaders: [
         "Content-Type",
         "Authorization",
-        "X-API-Key", // Common for API keys
-        "X-Source-Origin", // Custom header to identify source
+        "X-API-Key",
+        "X-Source-Origin",
         "User-Agent",
     ],
 });
+// Phase 1.3 Global Middleware (order matters!)
 app.use(express_1.default.json());
+app.use(requestId_middleware_1.requestIdMiddleware);
+app.use(requestLogger_middleware_1.conditionalRequestLogger);
 app.get("/", (req, res) => {
     res.type("html").send(`
     <!doctype html>
@@ -434,7 +447,7 @@ Authorization: Bearer YOUR_JWT_TOKEN
             <div class="section">
               <h2>🔧 Environment Status</h2>
               <p><strong>Deployment:</strong> ${isVercel ? 'Vercel Serverless' : 'Standalone Server'}</p>
-              <p><strong>Port:</strong> ${PORT}</p>
+              <p><strong>Port:</strong> ${config_1.config.server.port}</p>
               <p><strong>Database:</strong> MongoDB Connected</p>
               <p><strong>WebSocket:</strong> ${isVercel ? 'Disabled (Serverless)' : 'Enabled'}</p>
               <p><strong>Redis Cache:</strong> Available</p>
@@ -451,6 +464,8 @@ Authorization: Bearer YOUR_JWT_TOKEN
     </html>
   `);
 });
+// Health check routes (no authentication required)
+app.use("/api/v1", health_routes_1.default);
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, user_routes_1.default);
 app.use("/api/v1/projects", restrictedCors, project_routes_1.default, sdk_config_routes_1.default);
@@ -458,39 +473,52 @@ app.use("/api/v1/alert-rules", restrictedCors, alertRule_routes_1.default);
 app.use("/api/v1/dashboard", restrictedCors, dashboard_routes_1.default);
 app.use("/api/v1/alerts", restrictedCors, alertEvent_routes_1.default);
 app.use("/api/v1/notifications", restrictedCors, notification_routes_1.default);
-app.use('/api/v1/analytics', analytics_routes_1.default);
+app.use('/api/v1/analytics', restrictedCors, analytics_routes_1.default);
+app.use("/api/v1/insights", restrictedCors, insights_routes_1.default);
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, log_routes_1.default);
 // WEBSOCKET INITIALIZATION
 exports.globalServices = {
-    dashboardWebSocketService: new websocket_service_1.DashboardWebSocketService(server, JWT_SECRET),
+    dashboardWebSocketService: new websocket_service_1.DashboardWebSocketService(server, config_1.config.jwt.secret),
 };
-// ERROR HANDLING
-app.use((err, req, res, next) => {
-    console.error('Server Error:', err);
-    res.status(err.status || 500).json({
-        status: 'error',
-        message: err.message || 'Internal server error',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-    });
-});
+// Phase 1.3 Error Handling (must be last!)
+app.use(errorHandler_middleware_1.notFoundHandler);
+app.use(errorHandler_middleware_1.errorHandlerMiddleware);
 // Start the server only if not in Vercel environment
 if (!isVercel) {
     const startServer = async () => {
-        await (0, db_1.connectDB)(process.env.MONGODB_URI);
-        server.listen(PORT, () => {
-            console.log(`WebSocket server is running on port ${PORT}`);
-        });
+        try {
+            // Connect to database
+            await (0, database_config_1.connectDatabase)();
+            logger_1.default.info("Database connected successfully");
+            // Initialize Redis
+            await (0, db_1.initializeRedis)();
+            // Set global query timeouts
+            (0, query_timeout_1.setGlobalQueryTimeout)();
+            logger_1.default.info("Query timeouts configured");
+            // Start server
+            server.listen(config_1.config.server.port, () => {
+                logger_1.default.info(`Server running on port ${config_1.config.server.port}`, {
+                    environment: config_1.config.env,
+                    websocket: config_1.config.websocket.enabled,
+                });
+            });
+        }
+        catch (err) {
+            logger_1.default.error("Failed to start server", {
+                error: err instanceof Error ? err.message : "Unknown error",
+            });
+            process.exit(1);
+        }
     };
-    startServer().catch((err) => {
-        console.error("Failed to start server:", err);
-        process.exit(1);
-    });
+    startServer();
 }
 else {
     // In Vercel, just connect to DB without starting server
-    (0, db_1.connectDB)(process.env.MONGODB_URI).catch((err) => {
-        console.error("Failed to connect to database:", err);
+    (0, database_config_1.connectDatabase)().catch((err) => {
+        logger_1.default.error("Failed to connect to database", {
+            error: err instanceof Error ? err.message : "Unknown error",
+        });
     });
 }
 exports.default = app;

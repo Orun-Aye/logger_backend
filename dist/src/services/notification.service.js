@@ -222,7 +222,7 @@ class NotificationService {
                         finalHeaders['Authorization'] = `Basic ${basicAuth}`;
                         break;
                     case 'api-key':
-                        finalHeaders[authentication.headerName || 'X-API-Key'] = authentication.apiKey;
+                        finalHeaders[authentication.headerName || 'X-API-Key'] = authentication.apiKey || '';
                         break;
                 }
             }

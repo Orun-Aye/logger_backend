@@ -9,7 +9,7 @@ const notification_service_1 = require("../services/notification.service");
 class NotificationController {
     static async getNotifications(req, res) {
         try {
-            const userId = req.user?.userId;
+            const userId = req.userId;
             if (!userId) {
                 return res.status(401).json({ message: "Unauthorized" });
             }
@@ -44,7 +44,7 @@ class NotificationController {
     static async markAsRead(req, res) {
         try {
             const { id } = req.params;
-            const userId = req.user?.userId;
+            const userId = req.userId;
             const notification = await notification_model_1.default.findOneAndUpdate({ _id: id, userId }, { read: true }, { new: true });
             if (!notification) {
                 return res.status(404).json({ message: "Notification not found" });
@@ -58,7 +58,7 @@ class NotificationController {
     }
     static async markAllAsRead(req, res) {
         try {
-            const userId = req.user?.userId;
+            const userId = req.userId;
             await notification_model_1.default.updateMany({ userId, read: false }, { read: true });
             res.json({ message: "All notifications marked as read" });
         }
@@ -70,7 +70,7 @@ class NotificationController {
     // Test endpoint to trigger a notification manually (for verification)
     static async testNotification(req, res) {
         try {
-            const userId = req.user?.userId;
+            const userId = req.userId;
             const { type, message } = req.body;
             await notification_service_1.NotificationService.sendInApp(userId, type || "info", message || "Test notification");
             res.json({ message: "Notification sent" });

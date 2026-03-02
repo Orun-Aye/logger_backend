@@ -1,0 +1,26 @@
+[dotenv@17.2.0] injecting env (7) from .env (tip: 🔐 encrypt with dotenvx: https://dotenvx.com)
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild)
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🔐 encrypt with dotenvx: https://dotenvx.com)
+✓ Configuration validated successfully
+✓ Environment: development
+✓ Port: 5000
+✓ Database: cluster0.wq4k96o.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+✓ Redis: disabled
+Socket.io server initialized.
+2026-03-02 16:46:15 [[32minfo[39m]: [32mMongoDB connected successfully[39m
+2026-03-02 16:46:15 [[32minfo[39m]: [32mDatabase connected successfully[39m
+2026-03-02 16:46:15 [[32minfo[39m]: [32mRedis is disabled in configuration[39m
+2026-03-02 16:46:15 [[32minfo[39m]: [32mGlobal query timeouts configured[39m
+2026-03-02 16:46:15 [[32minfo[39m]: [32mQuery timeouts configured[39m
+Error: listen EADDRINUSE: address already in use :::5000
+    at Server.setupListenHandle [as _listen2] (node:net:1939:16)
+    at listenInCluster (node:net:1996:12)
+    at Server.listen (node:net:2101:7)
+    at startServer (C:\Users\DELL 7300\Desktop\Monita\logger_backend\src\server.ts:514:14)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 5000
+}

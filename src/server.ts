@@ -1,7 +1,18 @@
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
-import { connectDB } from "./utils/db";
+import { createServer } from "http";
+
+// Phase 1.3 Infrastructure
+import { config, initializeConfig } from "./config";
+import { connectDatabase } from "./config/database.config";
+import { requestIdMiddleware } from "./middleware/requestId.middleware";
+import { conditionalRequestLogger } from "./middleware/requestLogger.middleware";
+import { errorHandlerMiddleware, notFoundHandler } from "./middleware/errorHandler.middleware";
+import { setGlobalQueryTimeout } from "./utils/query-timeout";
+import logger from "./utils/logger";
+
+// Routes
+import healthRoutes from "./routes/health.routes";
 import projectRoutes from "./routes/project.routes";
 import sdkConfigRoutes from "./routes/sdk-config.routes";
 import logRoutes from "./routes/log.routes";
@@ -12,44 +23,46 @@ import analyticsRoutes from "./routes/analytics.routes";
 import alertEventRoutes from "./routes/alertEvent.routes";
 import notificationRoutes from "./routes/notification.routes";
 import insightsRoutes from "./routes/insights.routes";
-import { createServer } from "http";
-import { DashboardWebSocketService } from "./services/websocket.service";
-import { LogService } from "./services/log.service";
-import { DashboardService } from "./services/dashboard.service";
 
-dotenv.config();
+// Services
+import { DashboardWebSocketService } from "./services/websocket.service";
+import { initializeRedis } from "./utils/db";
+
+// Initialize configuration (validates environment variables)
+initializeConfig();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 const server = createServer(app);
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Check if running in Vercel serverless environment
 const isVercel = process.env.VERCEL === "1";
 
 // CORS configuration for dashboard/admin routes (restricted)
 const restrictedCors = cors({
-  origin: ["https://loghive.vercel.app", "http://localhost:3000"],
+  origin: config.cors.origin,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  credentials: true,
+  credentials: config.cors.credentials,
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 
 // CORS configuration for log ingestion (open to all origins)
 const logIngestionCors = cors({
   origin: true, // Allow all origins
-  methods: ["POST", "GET"], // Typically logs are POST requests
-  credentials: false, // Usually not needed for log ingestion
+  methods: ["POST", "GET"],
+  credentials: false,
   allowedHeaders: [
     "Content-Type",
     "Authorization",
-    "X-API-Key", // Common for API keys
-    "X-Source-Origin", // Custom header to identify source
+    "X-API-Key",
+    "X-Source-Origin",
     "User-Agent",
   ],
 });
 
+// Phase 1.3 Global Middleware (order matters!)
 app.use(express.json());
+app.use(requestIdMiddleware);
+app.use(conditionalRequestLogger);
 
 app.get("/", (req, res) => {
   res.type("html").send(`
@@ -438,7 +451,7 @@ Authorization: Bearer YOUR_JWT_TOKEN
             <div class="section">
               <h2>🔧 Environment Status</h2>
               <p><strong>Deployment:</strong> ${isVercel ? 'Vercel Serverless' : 'Standalone Server'}</p>
-              <p><strong>Port:</strong> ${PORT}</p>
+              <p><strong>Port:</strong> ${config.server.port}</p>
               <p><strong>Database:</strong> MongoDB Connected</p>
               <p><strong>WebSocket:</strong> ${isVercel ? 'Disabled (Serverless)' : 'Enabled'}</p>
               <p><strong>Redis Cache:</strong> Available</p>
@@ -456,6 +469,9 @@ Authorization: Bearer YOUR_JWT_TOKEN
   `);
 });
 
+// Health check routes (no authentication required)
+app.use("/api/v1", healthRoutes);
+
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, userRoutes);
 app.use("/api/v1/projects", restrictedCors, projectRoutes, sdkConfigRoutes);
@@ -472,40 +488,50 @@ app.use("/api/v1/", logIngestionCors, logRoutes);
 
 // WEBSOCKET INITIALIZATION
 export const globalServices = {
-  dashboardWebSocketService: new DashboardWebSocketService(server, JWT_SECRET),
+  dashboardWebSocketService: new DashboardWebSocketService(server, config.jwt.secret),
 };
 
-// ERROR HANDLING
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Server Error:', err);
-
-  res.status(err.status || 500).json({
-    status: 'error',
-    message: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
-});
-
-
+// Phase 1.3 Error Handling (must be last!)
+app.use(notFoundHandler);
+app.use(errorHandlerMiddleware);
 
 // Start the server only if not in Vercel environment
 if (!isVercel) {
   const startServer = async () => {
-    await connectDB(process.env.MONGODB_URI);
+    try {
+      // Connect to database
+      await connectDatabase();
+      logger.info("Database connected successfully");
 
-    server.listen(PORT, () => {
-      console.log(`WebSocket server is running on port ${PORT}`);
-    });
+      // Initialize Redis
+      await initializeRedis();
+
+      // Set global query timeouts
+      setGlobalQueryTimeout();
+      logger.info("Query timeouts configured");
+
+      // Start server
+      server.listen(config.server.port, () => {
+        logger.info(`Server running on port ${config.server.port}`, {
+          environment: config.env,
+          websocket: config.websocket.enabled,
+        });
+      });
+    } catch (err) {
+      logger.error("Failed to start server", {
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+      process.exit(1);
+    }
   };
 
-  startServer().catch((err) => {
-    console.error("Failed to start server:", err);
-    process.exit(1);
-  });
+  startServer();
 } else {
   // In Vercel, just connect to DB without starting server
-  connectDB(process.env.MONGODB_URI).catch((err) => {
-    console.error("Failed to connect to database:", err);
+  connectDatabase().catch((err) => {
+    logger.error("Failed to connect to database", {
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
   });
 }
 

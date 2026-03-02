@@ -1,5 +1,4 @@
 "use strict";
-// @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AlertRuleController = void 0;
 const alertRule_service_1 = require("../services/alertRule.service");

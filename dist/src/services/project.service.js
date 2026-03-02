@@ -1140,8 +1140,8 @@ class ProjectService {
                 if (!deletedProject) {
                     throw new ProjectNotFoundError(id);
                 }
-                // TODO: Consider also deleting associated logs
-                log_model_1.LogModel.deleteMany({ projectId: id });
+                // Delete associated logs
+                await log_model_1.LogModel.deleteMany({ projectId: id });
                 return { success: true, deletedId: id, type: "hard" };
             }
         }

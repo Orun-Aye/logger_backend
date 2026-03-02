@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AlertService = void 0;
-// @ts-nocheck
 const mongoose_1 = require("mongoose");
 const alertRule_model_1 = require("../models/alertRule.model");
 const alertEvent_model_1 = require("../models/alertEvent.model");
@@ -9,6 +8,9 @@ const log_model_1 = require("../models/log.model");
 const project_model_1 = require("../models/project.model");
 const notification_service_1 = require("./notification.service");
 const server_1 = require("../server");
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 class AlertService {
     static async evaluateLogAndTrigger(log) {
         try {
@@ -32,7 +34,7 @@ class AlertService {
                 if (condition.frequency && condition.intervalMinutes) {
                     const since = new Date(Date.now() - condition.intervalMinutes * 60 * 1000).toISOString();
                     const keywordFilter = condition.keyword
-                        ? { message: { $regex: condition.keyword, $options: "i" } }
+                        ? { message: { $regex: escapeRegex(condition.keyword), $options: "i" } }
                         : {};
                     const count = await log_model_1.LogModel.countDocuments({
                         projectId: log.projectId,
@@ -237,12 +239,12 @@ class AlertService {
      */
     static async updateAlertStatus(alertId, status, userId) {
         const updateData = {
-            status,
-            updatedAt: new Date(),
+            $set: {
+                status,
+                updatedAt: new Date(),
+                ...(status === "acknowledged" ? { acknowledgedAt: new Date() } : {}),
+            },
         };
-        if (status === "acknowledged") {
-            updateData.acknowledgedAt = new Date();
-        }
         if (userId) {
             updateData.$push = {
                 "metadata.statusHistory": {

@@ -32,6 +32,12 @@ class LogValidationError extends Error {
     }
 }
 exports.LogValidationError = LogValidationError;
+/**
+ * Escapes special regex characters in user input to prevent regex injection.
+ */
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 class LogService {
     /**
      * Validates if a given string is a valid MongoDB ObjectId.
@@ -74,20 +80,21 @@ class LogService {
         if (filters.eventType)
             query.eventType = filters.eventType;
         // Use regex for partial matching on string fields like userAgent, url, referrer
+        // All user inputs are escaped to prevent regex injection
         if (filters.userAgent)
-            query.userAgent = { $regex: filters.userAgent, $options: "i" };
+            query.userAgent = { $regex: escapeRegex(filters.userAgent), $options: "i" };
         if (filters.url)
-            query.url = { $regex: filters.url, $options: "i" };
+            query.url = { $regex: escapeRegex(filters.url), $options: "i" };
         if (filters.referrer)
-            query.referrer = { $regex: filters.referrer, $options: "i" };
+            query.referrer = { $regex: escapeRegex(filters.referrer), $options: "i" };
         // Search for message (case-insensitive regex)
         if (filters.search)
-            query.message = { $regex: filters.search, $options: "i" };
+            query.message = { $regex: escapeRegex(filters.search), $options: "i" };
         // Search for error details (case-insensitive regex)
         if (filters.errorName)
-            query["error.name"] = { $regex: filters.errorName, $options: "i" };
+            query["error.name"] = { $regex: escapeRegex(filters.errorName), $options: "i" };
         if (filters.errorMessage)
-            query["error.message"] = { $regex: filters.errorMessage, $options: "i" };
+            query["error.message"] = { $regex: escapeRegex(filters.errorMessage), $options: "i" };
         // Date range for timestamp. Logs store timestamp as ISO string, so compare with ISO strings.
         if (filters.startDate || filters.endDate) {
             query.timestamp = {};
@@ -170,28 +177,33 @@ class LogService {
             return newLog.toObject();
         }
         catch (error) {
-            const ingestionEndTime = new Date();
-            const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
-            try {
-                await log_model_1.LogModel.create({
-                    projectId: data.projectId,
-                    timestamp: new Date().toISOString(),
-                    level: 'error',
-                    message: 'Failed log ingestion',
-                    error: {
-                        name: error instanceof Error ? error.constructor.name : 'UnknownError',
-                        message: error instanceof Error ? error.message : 'Unknown error occurred',
-                    },
-                    eventType: 'error',
-                    ingestionStartTime,
-                    ingestionEndTime,
-                    responseTime,
-                    ingestionSuccess: false,
-                    data: { originalLogData: data }
-                });
-            }
-            catch (metricError) {
-                console.error('Failed to record ingestion failure metric:', metricError);
+            // Only record ingestion failure metrics for unexpected errors,
+            // not for intentional duplicate rejections or validation errors
+            if (!(error instanceof LogServiceError) &&
+                !(error instanceof LogValidationError)) {
+                const ingestionEndTime = new Date();
+                const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+                try {
+                    await log_model_1.LogModel.create({
+                        projectId: data.projectId,
+                        timestamp: new Date().toISOString(),
+                        level: 'error',
+                        message: 'Failed log ingestion',
+                        error: {
+                            name: error instanceof Error ? error.constructor.name : 'UnknownError',
+                            message: error instanceof Error ? error.message : 'Unknown error occurred',
+                        },
+                        eventType: 'error',
+                        ingestionStartTime,
+                        ingestionEndTime,
+                        responseTime,
+                        ingestionSuccess: false,
+                        data: { originalLogData: data }
+                    });
+                }
+                catch (metricError) {
+                    console.error('Failed to record ingestion failure metric:', metricError);
+                }
             }
             if (error instanceof LogValidationError ||
                 error instanceof LogServiceError) {
@@ -533,7 +545,7 @@ class LogService {
                 "error.message": { $exists: true, $nin: [null, ""] },
             };
             if (search) {
-                matchStage["error.message"] = { $regex: search, $options: "i" };
+                matchStage["error.message"] = { $regex: escapeRegex(search), $options: "i" };
             }
             const [uniqueMessages, totalCountResult] = await Promise.all([
                 log_model_1.LogModel.aggregate([
