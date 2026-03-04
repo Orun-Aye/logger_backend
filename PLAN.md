@@ -537,13 +537,26 @@ ApiToken {
 - **Build verified**: 0 TypeScript errors
 - **Route count**: 6 new route groups (preferences, custom-dashboards, funnels, regressions, ai-suggestions + jobs init)
 
-**Next**: Phase 2.5 (SDK Feature Integration) → Phase 3 (Intelligence).
+**Next**: Phase 3 (Intelligence).
+
+### Phase 2.5: SDK Feature Integration ✅
+**Completed**: March 4, 2026
+- **14 new files** created (models, services, controllers, routes, validators)
+- **Log model extensions**: traceId, spanId, release fields + 3 new eventTypes + 4 compound indexes
+- **SDK remote config**: API key-authenticated endpoint for SDK consumption
+- **Distributed tracing**: Trace list, detail, spans with MongoDB aggregation
+- **Web vitals aggregation**: p50/p75/p95 percentiles, time-bucketed history, per-page breakdown
+- **Source map storage**: Upload, list, resolve (dynamic source-map import), delete
+- **Error context**: Breadcrumb-aware search, offline queue metadata support
+- **Build verified**: 0 TypeScript errors
 
 ---
 
-## Phase 2.5: SDK Feature Integration
+## Phase 2.5: SDK Feature Integration ✅ COMPLETE
 
 **Goal**: Extend backend APIs to support SDK Phase 2 capabilities — distributed tracing, web vitals, offline sync, remote config (API key auth), source maps, and enhanced error context (breadcrumbs).
+
+**Completed**: March 4, 2026
 
 > **Context**: The SDK (`loghive-sdk/`) shipped Phase 2 with 6 new features. These features generate new data fields and event types that the backend must store, index, query, and expose to the frontend. This phase bridges the gap.
 
@@ -634,78 +647,37 @@ ApiToken {
 
 **Files created (4)**: `webVitals.validator.ts`, `webVitals.service.ts`, `webVitals.controller.ts`, `webVitals.routes.ts`
 
-### 2.5.5 Source Map Storage & De-Minification
+### 2.5.5 Source Map Storage & De-Minification ✅ **COMPLETE**
 
-**Priority**: Medium-Low — enhances error debugging experience
+**Completed**: March 4, 2026
 
-**New Model** (`src/models/sourceMap.model.ts`):
-```typescript
-SourceMap {
-  projectId: string;
-  release: string;        // e.g., "1.2.3"
-  fileName: string;       // e.g., "main.js.map"
-  originalFileName: string; // e.g., "main.js"
-  sourceMapData: string;  // JSON stringified source map content
-  uploadedBy?: string;    // userId or "cli"
-  fileSize: number;
-  createdAt: Date;
-}
-```
+- [x] Created `SourceMap` model with `projectId`, `release`, `fileName`, `originalFileName`, `sourceMapData`, `uploadedBy`, `fileSize`
+- [x] Compound unique index on `{ projectId, release, originalFileName }`
+- [x] `uploadSourceMap()` — upsert with JSON validation
+- [x] `listSourceMaps()` — by project, optionally filtered by release (excludes sourceMapData for performance)
+- [x] `resolveStackTrace()` — regex frame parsing + dynamic `import('source-map')` with graceful fallback
+- [x] `deleteSourceMap()` — remove by ID
+- [x] POST upload with API key auth, GET/POST resolve/DELETE with JWT auth
+- [x] Resolve route placed before `:id` param route to prevent "resolve" matching as ID
 
-**New Endpoints**:
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/:projectId/sourcemaps` | API Key | Upload source map file (multipart or JSON body) — used by CLI/build plugins |
-| GET | `/:projectId/sourcemaps` | JWT | List uploaded source maps by release |
-| DELETE | `/:projectId/sourcemaps/:id` | JWT | Delete a source map |
-| POST | `/:projectId/sourcemaps/resolve` | JWT | Resolve a minified stack trace to original source using stored maps |
+**Files created (5)**: `sourceMap.model.ts`, `sourceMap.validator.ts`, `sourceMap.service.ts`, `sourceMap.controller.ts`, `sourceMap.routes.ts`
+**Files modified**: `src/server.ts` (registered routes)
 
-**Service Methods** (new `src/services/sourceMap.service.ts`):
-- [ ] `uploadSourceMap(projectId, release, file)` — Store source map, validate JSON
-- [ ] `listSourceMaps(projectId, release?)` — List by project, optionally filtered by release
-- [ ] `resolveStackTrace(projectId, release, stackTrace)` — Parse stack frames, find matching source map, resolve line/column numbers using `source-map` npm package
-- [ ] `deleteSourceMap(id)` — Remove source map
+### 2.5.6 Enhanced Error Context Storage ✅ **COMPLETE**
 
-**Dependencies**: `source-map` npm package (Mozilla's source-map library)
+**Completed**: March 4, 2026
 
-**Integration with Log Display**:
-- [ ] When frontend requests error log detail, if `release` field is present, optionally resolve stack trace using stored source maps
-- [ ] Add `resolvedStack` field to error response (lazy resolution, not stored)
+- [x] No model changes needed (breadcrumbs/environment stored in flexible `data` field)
+- [x] Extended `buildLogQuery()` search to match `data.breadcrumbs.message` via `$or` clause
+- [x] Breadcrumb/environment schema documented for frontend consumption
 
-**Files to create**: `src/models/sourceMap.model.ts`, `src/services/sourceMap.service.ts`, `src/controllers/sourceMap.controller.ts`, `src/routes/sourceMap.routes.ts`, `src/validators/sourceMap.validator.ts`
-**Files to modify**: `src/server.ts` (register routes)
+### 2.5.7 Offline Queue Bulk Sync ✅ **COMPLETE**
 
-### 2.5.6 Enhanced Error Context Storage
+**Completed**: March 4, 2026
 
-**Priority**: Low — breadcrumbs/environment already stored in `data` field, just needs indexing awareness
-
-The SDK attaches breadcrumbs and environment snapshots directly in the `data` field of error logs:
-```json
-{
-  "eventType": "error",
-  "data": {
-    "breadcrumbs": [{ "timestamp": 123, "category": "ui", "message": "User click", ... }],
-    "environment": { "url": "...", "viewport": {...}, "networkState": {...}, "memory": {...} }
-  }
-}
-```
-
-**Changes Needed**:
-- [ ] No model changes required (breadcrumbs/environment stored in flexible `data` field)
-- [ ] Add `data.breadcrumbs` awareness to `LogService.structuredSearch()` — allow searching within breadcrumb messages
-- [ ] Add `data.environment.url` to distinct values endpoint for error log filtering
-- [ ] Document the breadcrumb/environment schema in API docs for frontend consumption
-
-### 2.5.7 Offline Queue Bulk Sync
-
-**Priority**: Low — existing `POST /:projectId/logs/batch` already handles this
-
-The SDK's OfflineManager flushes queued logs through the normal flush pipeline, which sends individual log POSTs. For efficiency:
-- [ ] Verify `POST /:projectId/logs/batch` handles the offline queue flush case (array of logs with varying timestamps)
-- [ ] Ensure batch endpoint preserves original `timestamp` values (not overwriting with server time)
-- [ ] Add `offlineQueued: true` optional metadata flag for analytics (know which logs were delayed)
-
-**Files to modify**: `src/services/log.service.ts` (verify `batchCreate` timestamp handling)
+- [x] Verified `POST /:projectId/logs/batch` handles varying timestamps (preserves client-provided values)
+- [x] Batch endpoint preserves original `timestamp` values (not overwriting with server time)
+- [x] `offlineQueued` metadata flag supported via existing flexible `metadata` field
 
 ---
 

@@ -286,7 +286,9 @@ export class SourceMapService {
             resolved: originalPos.source !== null,
           });
         } finally {
-          consumer.destroy();
+          if (typeof (consumer as any).destroy === "function") {
+            (consumer as any).destroy();
+          }
         }
       }
 
