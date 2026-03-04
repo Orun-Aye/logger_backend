@@ -18,10 +18,15 @@ export interface ILog extends Document {
   environment?: string;
   context?: Record<string, any>;
   metadata?: any;
-  eventType?: 'error' | 'performance' | 'interaction' | 'network' | 'console' | 'pageview';
+  eventType?: 'error' | 'performance' | 'interaction' | 'network' | 'console' | 'pageview' | 'web-vital' | 'breadcrumb' | 'message';
   userAgent?: string;
   url?: string;
   referrer?: string;
+  correlationId?: string; // For distributed tracing
+  sessionId?: string; // For session grouping
+  traceId?: string; // SDK Phase 2: Distributed tracing
+  spanId?: string; // SDK Phase 2: Distributed tracing
+  release?: string; // SDK Phase 2: Release/version tracking
   createdAt?: Date;
   updatedAt?: Date;
   ingestionStartTime?: Date;
@@ -78,7 +83,7 @@ const LogSchema: Schema = new Schema<ILog>(
     },
     eventType: {
       type: String,
-      enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview'],
+      enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview', 'web-vital', 'breadcrumb', 'message'],
       index: true, // Good for filtering by event type
     },
     userAgent: {
@@ -90,6 +95,25 @@ const LogSchema: Schema = new Schema<ILog>(
     },
     referrer: {
       type: String,
+    },
+    correlationId: {
+      type: String,
+      index: true, // For distributed tracing queries
+    },
+    sessionId: {
+      type: String,
+      index: true, // For session-based queries
+    },
+    traceId: {
+      type: String,
+      index: true, // SDK Phase 2: Distributed tracing queries
+    },
+    spanId: {
+      type: String,
+    },
+    release: {
+      type: String,
+      index: true, // SDK Phase 2: Filter/group by release version
     },
     ingestionStartTime: {
       type: Date,
@@ -118,5 +142,13 @@ LogSchema.index({ projectId: 1, eventType: 1 }); // Filter by project and event 
 LogSchema.index({ url: 1, timestamp: -1 }); // URL-based queries with recency
 LogSchema.index({ projectId: 1, responseTime: 1 }); // For response time queries
 LogSchema.index({ projectId: 1, ingestionEndTime: -1 }); // For recent response time analysis
+LogSchema.index({ correlationId: 1, timestamp: -1 }); // Distributed tracing queries
+LogSchema.index({ sessionId: 1, timestamp: -1 }); // Session-based queries
+LogSchema.index({ projectId: 1, correlationId: 1 }); // Project + correlation
+LogSchema.index({ projectId: 1, sessionId: 1 }); // Project + session
+LogSchema.index({ traceId: 1, timestamp: -1 }); // SDK Phase 2: Trace-based queries
+LogSchema.index({ projectId: 1, traceId: 1 }); // SDK Phase 2: Project + trace
+LogSchema.index({ projectId: 1, release: 1, timestamp: -1 }); // SDK Phase 2: Release tracking
+LogSchema.index({ projectId: 1, eventType: 1, timestamp: -1 }); // Web vitals time queries
 
 export const LogModel = mongoose.model<ILog>("Log", LogSchema);

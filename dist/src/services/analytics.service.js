@@ -938,6 +938,62 @@ class AnalyticsService {
         return journeys;
     }
     // ============================================================================
+    // ENVIRONMENT ANALYTICS
+    // ============================================================================
+    /**
+     * Get per-environment statistics for a project
+     */
+    static async getEnvironmentStats(projectId, options) {
+        const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+        const pipeline = [
+            {
+                $match: {
+                    projectId: projectId,
+                    createdAt: { $gte: startDate, $lte: endDate },
+                },
+            },
+            {
+                $group: {
+                    _id: "$environment",
+                    totalLogs: { $sum: 1 },
+                    errorCount: {
+                        $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
+                    },
+                    warnCount: {
+                        $sum: { $cond: [{ $eq: ["$level", "warn"] }, 1, 0] },
+                    },
+                    avgResponseTime: {
+                        $avg: {
+                            $cond: [{ $and: [{ $ne: ["$responseTime", null] }, { $isNumber: "$responseTime" }] }, "$responseTime", null],
+                        },
+                    },
+                    lastActivity: { $max: "$createdAt" },
+                },
+            },
+            {
+                $project: {
+                    _id: 0,
+                    environment: { $ifNull: ["$_id", "unknown"] },
+                    totalLogs: 1,
+                    errorCount: 1,
+                    warnCount: 1,
+                    errorRate: {
+                        $cond: [
+                            { $gt: ["$totalLogs", 0] },
+                            { $multiply: [{ $divide: ["$errorCount", "$totalLogs"] }, 100] },
+                            0,
+                        ],
+                    },
+                    avgResponseTime: { $round: [{ $ifNull: ["$avgResponseTime", 0] }, 2] },
+                    lastActivity: 1,
+                },
+            },
+            { $sort: { totalLogs: -1 } },
+        ];
+        const results = await log_model_1.LogModel.aggregate(pipeline);
+        return results;
+    }
+    // ============================================================================
     // UTILITIES
     // ============================================================================
     static async getDashboardOverview(projectId, options) {

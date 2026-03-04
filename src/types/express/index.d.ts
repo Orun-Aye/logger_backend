@@ -10,6 +10,7 @@ declare global {
       projectId?: string;
       userId?: string;
       project?: any;
+      sampled?: boolean;
     }
   }
 }

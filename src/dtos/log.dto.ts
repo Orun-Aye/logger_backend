@@ -40,10 +40,19 @@ export interface CreateLogDTO {
     | "interaction"
     | "network"
     | "console"
-    | "pageview";
+    | "pageview"
+    | "web-vital"
+    | "breadcrumb"
+    | "message";
   userAgent?: string;
   url?: string;
   referrer?: string;
+  responseTime?: number; // Phase 2.1: For performance tracking
+  correlationId?: string; // Phase 2.1: For distributed tracing
+  sessionId?: string; // Phase 2.1: For session grouping
+  traceId?: string; // SDK Phase 2: Distributed tracing
+  spanId?: string; // SDK Phase 2: Distributed tracing
+  release?: string; // SDK Phase 2: Release/version tracking
 }
 
 /**
@@ -65,12 +74,20 @@ export interface FilterLogsDTO {
     | "interaction"
     | "network"
     | "console"
-    | "pageview";
+    | "pageview"
+    | "web-vital"
+    | "breadcrumb"
+    | "message";
   userAgent?: string;
   url?: string;
   referrer?: string;
   errorName?: string; // Filter by error.name
   errorMessage?: string; // Filter by error.message regex
+  traceId?: string; // SDK Phase 2: Filter by trace
+  spanId?: string; // SDK Phase 2: Filter by span
+  release?: string; // SDK Phase 2: Filter by release version
+  correlationId?: string; // Filter by correlation ID
+  sessionId?: string; // Filter by session ID
 
   page?: number;
   limit?: number;

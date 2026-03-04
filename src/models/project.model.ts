@@ -20,6 +20,16 @@ export interface IProject extends Document {
   };
   tags?: string[];
   lastIngestedAt?: Date;
+  retentionConfig?: {
+    retentionDays: number;
+    autoCleanupEnabled: boolean;
+  };
+  samplingConfig?: {
+    enabled: boolean;
+    mode: "rate" | "percentage";
+    value: number;
+    alwaysKeepLevels: string[];
+  };
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -47,6 +57,16 @@ const ProjectSchema: Schema<IProject> = new Schema(
     },
     tags: { type: [String], default: [] },
     lastIngestedAt: { type: Date },
+    retentionConfig: {
+      retentionDays: { type: Number, default: 30 },
+      autoCleanupEnabled: { type: Boolean, default: true },
+    },
+    samplingConfig: {
+      enabled: { type: Boolean, default: false },
+      mode: { type: String, enum: ["rate", "percentage"], default: "percentage" },
+      value: { type: Number, default: 100, min: 1, max: 1000 },
+      alwaysKeepLevels: { type: [String], default: ["error", "fatal"] },
+    },
   },
   {
     timestamps: true,

@@ -24,6 +24,9 @@ exports.eventTypeSchema = zod_1.z.enum([
     "network",
     "console",
     "pageview",
+    "web-vital",
+    "breadcrumb",
+    "message",
 ]);
 /**
  * Error object schema
@@ -69,6 +72,11 @@ exports.createLogSchema = zod_1.z
     url: zod_1.z.string().url().optional().or(zod_1.z.literal("")),
     referrer: zod_1.z.string().url().optional().or(zod_1.z.literal("")),
     responseTime: zod_1.z.number().min(0).optional(),
+    correlationId: zod_1.z.string().max(100).optional(),
+    sessionId: zod_1.z.string().max(100).optional(),
+    traceId: zod_1.z.string().max(100).optional(),
+    spanId: zod_1.z.string().max(100).optional(),
+    release: zod_1.z.string().max(100).optional(),
 })
     .strict();
 /**
@@ -103,6 +111,11 @@ exports.filterLogsSchema = zod_1.z.object({
     referrer: zod_1.z.string().optional(),
     errorName: zod_1.z.string().optional(),
     errorMessage: zod_1.z.string().optional(),
+    traceId: zod_1.z.string().optional(),
+    spanId: zod_1.z.string().optional(),
+    release: zod_1.z.string().optional(),
+    correlationId: zod_1.z.string().optional(),
+    sessionId: zod_1.z.string().optional(),
     page: zod_1.z
         .string()
         .optional()

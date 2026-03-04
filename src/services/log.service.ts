@@ -4,10 +4,16 @@ import {
   LogLevel,
   LogSummaryData,
 } from "../dtos/log.dto";
+import {
+  BatchLogDTO,
+  BatchLogResponseDTO,
+  ExportLogsQueryDTO,
+} from "../dtos/savedSearch.dto";
 import { LogModel, ILog } from "../models/log.model"; // Import ILog for type safety
 import { Types, SortOrder } from "mongoose";
 import { globalServices } from "../server";
 import { AlertService } from "./alert.service";
+import { Readable } from "stream";
 
 // Custom error classes for better error handling
 export class LogNotFoundError extends Error {
@@ -90,9 +96,14 @@ export class LogService {
     if (filters.referrer)
       query.referrer = { $regex: escapeRegex(filters.referrer), $options: "i" };
 
-    // Search for message (case-insensitive regex)
-    if (filters.search)
-      query.message = { $regex: escapeRegex(filters.search), $options: "i" };
+    // Search for message and breadcrumb messages (case-insensitive regex)
+    if (filters.search) {
+      const searchRegex = { $regex: escapeRegex(filters.search), $options: "i" };
+      query.$or = [
+        { message: searchRegex },
+        { "data.breadcrumbs.message": searchRegex },
+      ];
+    }
 
     // Search for error details (case-insensitive regex)
     if (filters.errorName)
@@ -101,6 +112,13 @@ export class LogService {
       query["error.message"] = { $regex: escapeRegex(filters.errorMessage), $options: "i" };
 
     // Date range for timestamp. Logs store timestamp as ISO string, so compare with ISO strings.
+    // SDK Phase 2: Distributed tracing and release filters
+    if (filters.traceId) query.traceId = filters.traceId;
+    if (filters.spanId) query.spanId = filters.spanId;
+    if (filters.release) query.release = filters.release;
+    if (filters.correlationId) query.correlationId = filters.correlationId;
+    if (filters.sessionId) query.sessionId = filters.sessionId;
+
     if (filters.startDate || filters.endDate) {
       query.timestamp = {};
       if (filters.startDate)
@@ -728,5 +746,364 @@ export class LogService {
         { projectId, options, originalError: error }
       );
     }
+  }
+
+  /**
+   * Batch create multiple log entries in a single operation.
+   * @param projectId The ID of the project for all logs.
+   * @param data The batch log data containing an array of logs.
+   * @returns A response object with success/failure counts and individual results.
+   * @throws LogValidationError if projectId is invalid or batch size exceeds limits.
+   * @throws LogServiceError for other processing failures.
+   */
+  static async batchCreate(
+    projectId: string,
+    data: BatchLogDTO
+  ): Promise<BatchLogResponseDTO> {
+    try {
+      this.validateObjectId(projectId);
+
+      if (data.logs.length === 0) {
+        throw new LogValidationError("Batch must contain at least one log entry");
+      }
+
+      if (data.logs.length > 100) {
+        throw new LogValidationError("Batch size cannot exceed 100 logs");
+      }
+
+      const results: BatchLogResponseDTO["results"] = [];
+      let successCount = 0;
+      let failedCount = 0;
+
+      // Process each log entry individually
+      for (let i = 0; i < data.logs.length; i++) {
+        const logEntry = data.logs[i];
+        try {
+          const logData: CreateLogDTO = {
+            projectId,
+            timestamp: logEntry.timestamp,
+            level: logEntry.level as LogLevel,
+            message: logEntry.message,
+            data: logEntry.data,
+            error: logEntry.error,
+            service: logEntry.service,
+            environment: logEntry.environment,
+            context: logEntry.context,
+            metadata: logEntry.metadata,
+            eventType: logEntry.eventType as ILog["eventType"],
+            userAgent: logEntry.userAgent,
+            url: logEntry.url,
+            referrer: logEntry.referrer,
+            correlationId: logEntry.correlationId,
+            sessionId: logEntry.sessionId,
+            traceId: logEntry.traceId,
+            spanId: logEntry.spanId,
+            release: logEntry.release,
+          };
+
+          const createdLog = await this.createLog(logData);
+          successCount++;
+          results.push({
+            index: i,
+            success: true,
+            logId: createdLog._id.toString(),
+          });
+        } catch (error) {
+          failedCount++;
+          results.push({
+            index: i,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      return {
+        success: successCount,
+        failed: failedCount,
+        results,
+      };
+    } catch (error) {
+      if (error instanceof LogValidationError) {
+        throw error;
+      }
+      throw new LogServiceError(
+        `Failed to process batch logs: ${(error as Error).message}`,
+        { projectId, batchSize: data.logs.length, originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Perform a structured query search on logs using a query string format.
+   * Query syntax: "level:error service:api message:timeout"
+   * @param projectId The ID of the project.
+   * @param query The structured query string.
+   * @param page Page number for pagination.
+   * @param limit Number of results per page.
+   * @returns An object containing the logs and pagination metadata.
+   * @throws LogValidationError if projectId is invalid.
+   * @throws LogServiceError for search failures.
+   */
+  static async structuredSearch(
+    projectId: string,
+    query: string,
+    page: number = 1,
+    limit: number = 100
+  ) {
+    try {
+      this.validateObjectId(projectId);
+
+      // Parse the structured query string
+      const filters: FilterLogsDTO = { projectId, page, limit };
+
+      // Split query by spaces but preserve quoted strings
+      const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+
+      for (const token of tokens) {
+        const colonIndex = token.indexOf(":");
+        if (colonIndex === -1) {
+          // No colon, treat as general search term
+          if (!filters.search) {
+            filters.search = token.replace(/"/g, "");
+          }
+          continue;
+        }
+
+        const field = token.substring(0, colonIndex).toLowerCase();
+        const value = token.substring(colonIndex + 1).replace(/"/g, "");
+
+        switch (field) {
+          case "level":
+            if (!filters.levels) filters.levels = [];
+            filters.levels.push(value as LogLevel);
+            break;
+          case "service":
+            if (!filters.services) filters.services = [];
+            filters.services.push(value);
+            break;
+          case "environment":
+            filters.environment = value;
+            break;
+          case "eventtype":
+          case "event":
+            filters.eventType = value as ILog["eventType"];
+            break;
+          case "message":
+          case "search":
+            filters.search = value;
+            break;
+          case "error":
+            filters.errorMessage = value;
+            break;
+          case "errorname":
+            filters.errorName = value;
+            break;
+          case "url":
+            filters.url = value;
+            break;
+          case "useragent":
+            filters.userAgent = value;
+            break;
+          case "referrer":
+            filters.referrer = value;
+            break;
+          default:
+            // Unknown field, ignore or treat as search term
+            if (!filters.search) {
+              filters.search = token;
+            }
+            break;
+        }
+      }
+
+      // Use the existing getAllLogs method with the parsed filters
+      return await this.getAllLogs(filters);
+    } catch (error) {
+      if (error instanceof LogValidationError) {
+        throw error;
+      }
+      throw new LogServiceError(
+        `Failed to execute structured search: ${(error as Error).message}`,
+        { projectId, query, originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Export logs to CSV or JSON format with streaming support.
+   * @param projectId The ID of the project.
+   * @param options Export options including format and filters.
+   * @returns A readable stream of the exported data.
+   * @throws LogValidationError if projectId is invalid.
+   * @throws LogServiceError for export failures.
+   */
+  static async exportLogs(
+    projectId: string,
+    options: ExportLogsQueryDTO
+  ): Promise<Readable> {
+    try {
+      this.validateObjectId(projectId);
+
+      const {
+        format,
+        levels,
+        services,
+        environments,
+        search,
+        startDate,
+        endDate,
+        limit = 10000,
+      } = options;
+
+      // Build query filters
+      const filters: FilterLogsDTO = {
+        projectId,
+        levels: levels as LogLevel[] | undefined,
+        services,
+        environment: environments?.[0], // Take first environment if provided
+        search,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+      };
+
+      const query = this.buildLogQuery(filters);
+
+      // Create a cursor for streaming results
+      const cursor = LogModel.find(query)
+        .select("-__v")
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .cursor();
+
+      if (format === "csv") {
+        return this.createCSVStream(cursor);
+      } else {
+        return this.createJSONStream(cursor);
+      }
+    } catch (error) {
+      if (error instanceof LogValidationError) {
+        throw error;
+      }
+      throw new LogServiceError(
+        `Failed to export logs: ${(error as Error).message}`,
+        { projectId, options, originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Creates a readable stream that outputs logs in CSV format.
+   * @param cursor MongoDB cursor for streaming documents.
+   * @returns A readable stream of CSV data.
+   */
+  private static createCSVStream(cursor: any): Readable {
+    let headerWritten = false;
+
+    const stream = new Readable({
+      async read() {
+        try {
+          const doc = await cursor.next();
+
+          if (!doc) {
+            this.push(null); // End of stream
+            return;
+          }
+
+          // Write CSV header on first row
+          if (!headerWritten) {
+            const headers = [
+              "timestamp",
+              "level",
+              "message",
+              "service",
+              "environment",
+              "eventType",
+              "errorName",
+              "errorMessage",
+              "url",
+              "userAgent",
+              "correlationId",
+              "sessionId",
+              "traceId",
+              "spanId",
+              "release",
+            ].join(",");
+            this.push(headers + "\n");
+            headerWritten = true;
+          }
+
+          // Escape CSV values
+          const escape = (val: any) => {
+            if (val === undefined || val === null) return "";
+            const str = String(val);
+            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          };
+
+          const row = [
+            escape(doc.timestamp),
+            escape(doc.level),
+            escape(doc.message),
+            escape(doc.service),
+            escape(doc.environment),
+            escape(doc.eventType),
+            escape(doc.error?.name),
+            escape(doc.error?.message),
+            escape(doc.url),
+            escape(doc.userAgent),
+            escape(doc.correlationId),
+            escape(doc.sessionId),
+            escape(doc.traceId),
+            escape(doc.spanId),
+            escape(doc.release),
+          ].join(",");
+
+          this.push(row + "\n");
+        } catch (error) {
+          this.destroy(error as Error);
+        }
+      },
+    });
+
+    return stream;
+  }
+
+  /**
+   * Creates a readable stream that outputs logs in JSON format.
+   * @param cursor MongoDB cursor for streaming documents.
+   * @returns A readable stream of JSON data.
+   */
+  private static createJSONStream(cursor: any): Readable {
+    let first = true;
+
+    const stream = new Readable({
+      async read() {
+        try {
+          const doc = await cursor.next();
+
+          if (!doc) {
+            this.push("]"); // Close JSON array
+            this.push(null); // End of stream
+            return;
+          }
+
+          if (first) {
+            this.push("["); // Start JSON array
+            first = false;
+          } else {
+            this.push(","); // Separator between JSON objects
+          }
+
+          this.push(JSON.stringify(doc));
+        } catch (error) {
+          this.destroy(error as Error);
+        }
+      },
+    });
+
+    return stream;
   }
 }

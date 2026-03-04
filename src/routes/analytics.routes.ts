@@ -88,6 +88,13 @@ router.get('/:projectId/sessions/:sessionId', AnalyticsController.getSessionDeta
 router.get('/:projectId/sessions/:sessionId/timeline', AnalyticsController.getSessionTimeline);
 
 // ============================================================================
+// ENVIRONMENT ANALYTICS
+// ============================================================================
+
+// Get per-environment statistics for a project
+router.get('/:projectId/environments/stats', AnalyticsController.getEnvironmentStats);
+
+// ============================================================================
 // CROSS-DASHBOARD UTILITIES
 // ============================================================================
 

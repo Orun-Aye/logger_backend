@@ -1,12 +1,18 @@
 import { Router } from 'express';
 import { LogController } from '../controllers/log.controller';
 import { authenticateApiKey, verifyToken } from '../middleware/auth.middleware'; // Assuming verifyToken exists
+import { validate } from '../middleware/validation.middleware';
+import { samplingMiddleware } from '../middleware/sampling.middleware';
+import { batchLogSchema, structuredQuerySchema, exportLogsSchema } from '../validators/savedSearch.validator';
 
 const router = Router();
 
 // --- Log Ingestion (typically requires API Key authentication) ---
+// Batch create multiple log entries for a specific project
+router.post('/:projectId/logs/batch', authenticateApiKey, validate(batchLogSchema, 'body'), LogController.batchCreateLogs);
+
 // Create a new log entry for a specific project
-router.post('/:projectId/logs', authenticateApiKey, LogController.createLog);
+router.post('/:projectId/logs', authenticateApiKey, samplingMiddleware, LogController.createLog);
 
 // --- Log Management and Analytics (typically requires user authentication) ---
 
@@ -21,6 +27,12 @@ router.get('/:projectId/logs/distinct-values/:field', verifyToken, LogController
 
 // Get unique error messages for a project
 router.get('/:projectId/logs/unique-errors', verifyToken, LogController.getUniqueErrorMessages);
+
+// Structured query search for logs
+router.post('/:projectId/logs/search', verifyToken, validate(structuredQuerySchema, 'body'), LogController.structuredSearch);
+
+// Export logs to CSV or JSON
+router.post('/:projectId/logs/export', verifyToken, validate(exportLogsSchema, 'body'), LogController.exportLogs);
 
 // Get a specific log by ID (should be after more specific routes like /summary, /trends)
 router.get('/:projectId/logs/:logId', verifyToken, LogController.getLogById);

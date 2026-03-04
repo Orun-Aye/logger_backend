@@ -24,6 +24,9 @@ export const eventTypeSchema = z.enum([
   "network",
   "console",
   "pageview",
+  "web-vital",
+  "breadcrumb",
+  "message",
 ]);
 
 /**
@@ -68,6 +71,11 @@ export const createLogSchema = z
     url: z.string().url().optional().or(z.literal("")),
     referrer: z.string().url().optional().or(z.literal("")),
     responseTime: z.number().min(0).optional(),
+    correlationId: z.string().max(100).optional(),
+    sessionId: z.string().max(100).optional(),
+    traceId: z.string().max(100).optional(),
+    spanId: z.string().max(100).optional(),
+    release: z.string().max(100).optional(),
   })
   .strict();
 
@@ -103,6 +111,11 @@ export const filterLogsSchema = z.object({
   referrer: z.string().optional(),
   errorName: z.string().optional(),
   errorMessage: z.string().optional(),
+  traceId: z.string().optional(),
+  spanId: z.string().optional(),
+  release: z.string().optional(),
+  correlationId: z.string().optional(),
+  sessionId: z.string().optional(),
   page: z
     .string()
     .optional()

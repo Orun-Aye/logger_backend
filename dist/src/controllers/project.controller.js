@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProjectController = void 0;
 const project_service_1 = require("../services/project.service");
+const project_model_1 = require("../models/project.model");
 /**
  * ProjectController - Handles all project-related HTTP requests
  *
@@ -585,6 +586,33 @@ class ProjectController {
         }
         catch (error) {
             return ProjectController.handleError(error, res, "Failed to update rate limit configuration");
+        }
+    }
+    // =============================================================================
+    // SAMPLING CONFIGURATION
+    // =============================================================================
+    /**
+     * Updates sampling configuration for a project
+     * PUT /api/projects/:projectId/sampling-config
+     *
+     * Body: { enabled: boolean, mode: "rate"|"percentage", value: number, alwaysKeepLevels?: string[] }
+     */
+    static async updateSamplingConfig(req, res) {
+        try {
+            const { projectId } = req.params;
+            const samplingConfig = req.body;
+            const project = await project_model_1.ProjectModel.findByIdAndUpdate(projectId, { $set: { samplingConfig } }, { new: true, runValidators: true });
+            if (!project) {
+                return res.status(404).json({ status: "error", message: "Project not found" });
+            }
+            return res.status(200).json({
+                status: "success",
+                message: "Sampling configuration updated",
+                data: { samplingConfig: project.samplingConfig },
+            });
+        }
+        catch (error) {
+            return res.status(500).json({ status: "error", message: error.message });
         }
     }
     // =============================================================================

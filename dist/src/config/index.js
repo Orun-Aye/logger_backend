@@ -48,7 +48,7 @@ function validateEnv() {
  */
 function getEnv(key, defaultValue) {
     const value = process.env[key];
-    if (!value && !defaultValue) {
+    if (!value && defaultValue === undefined) {
         throw new Error(`Environment variable ${key} is not set`);
     }
     return value || defaultValue || "";
@@ -201,6 +201,29 @@ exports.config = {
      */
     frontend: {
         url: getEnv("FRONTEND_URL", "http://localhost:3000"),
+    },
+    /**
+     * OAuth configuration
+     */
+    oauth: {
+        github: {
+            clientId: getEnv("GITHUB_CLIENT_ID", ""),
+            clientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
+            redirectUri: getEnv("GITHUB_REDIRECT_URI", ""),
+        },
+        google: {
+            clientId: getEnv("GOOGLE_CLIENT_ID", ""),
+            clientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+            redirectUri: getEnv("GOOGLE_REDIRECT_URI", ""),
+        },
+    },
+    /**
+     * Data retention configuration
+     */
+    retention: {
+        defaultDays: getEnvAsNumber("RETENTION_DEFAULT_DAYS", 30),
+        cronSchedule: getEnv("RETENTION_CRON_SCHEDULE", "0 2 * * *"),
+        enabled: getEnvAsBoolean("RETENTION_JOB_ENABLED", true),
     },
 };
 /**

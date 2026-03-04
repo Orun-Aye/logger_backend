@@ -13,3 +13,19 @@ export interface LoginUserDTO {
     email: string;
     password: string; // Assuming password is used for login
 }
+
+export interface UpdateProfileDTO {
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
+}
+
+export interface ChangePasswordDTO {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface OAuthLoginDTO {
+  code: string;
+  provider: "github" | "google";
+}

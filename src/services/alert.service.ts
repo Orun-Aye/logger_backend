@@ -1,8 +1,10 @@
 import { Types } from "mongoose";
-import { AlertRuleModel } from "../models/alertRule.model";
+import { AlertRuleModel, IAlertRules, ISimpleCondition, ICompositeCondition } from "../models/alertRule.model";
 import { AlertEventModel, IAlertEvent } from "../models/alertEvent.model";
 import { LogModel, ILog } from "../models/log.model";
 import { ProjectModel } from "../models/project.model";
+import { MaintenanceWindowModel } from "../models/maintenanceWindow.model";
+import { EscalationPolicyModel } from "../models/escalationPolicy.model";
 import { NotificationService } from "./notification.service";
 import { globalServices } from "../server";
 
@@ -52,6 +54,14 @@ export class AlertService {
   static async evaluateLogAndTrigger(log: ILog) {
     try {
       const projectId = new Types.ObjectId(log.projectId);
+
+      // Check maintenance windows first
+      const inMaintenanceWindow = await this.checkMaintenanceWindow(projectId, log);
+      if (inMaintenanceWindow) {
+        console.log(`Alert suppressed due to maintenance window for project ${projectId}`);
+        return;
+      }
+
       const activeRules = await AlertRuleModel.find({
         projectId,
         isActive: true,
@@ -59,30 +69,35 @@ export class AlertService {
       if (!activeRules.length) return;
 
       for (const rule of activeRules) {
-        const condition: RuleCondition = rule.condition || {};
-        const matchLevel = !condition.level || log.level === condition.level;
-        const matchKeyword =
-          !condition.keyword ||
-          (log.message || "")
-            .toLowerCase()
-            .includes(String(condition.keyword).toLowerCase());
-        if (!(matchLevel && matchKeyword)) continue;
+        // Check if rule is snoozed
+        if (rule.snoozeUntil && rule.snoozeUntil > new Date()) {
+          continue;
+        }
 
-        // Frequency threshold within time window
-        if (condition.frequency && condition.intervalMinutes) {
-          const since = new Date(
-            Date.now() - condition.intervalMinutes * 60 * 1000
-          ).toISOString();
-          const keywordFilter = condition.keyword
-            ? { message: { $regex: escapeRegex(condition.keyword), $options: "i" } }
-            : {};
+        const condition = rule.condition;
+        let matched = false;
+
+        // Check if it's a composite condition
+        if ('operator' in condition) {
+          matched = this.evaluateCompositeCondition(condition as ICompositeCondition, log);
+        } else {
+          matched = this.evaluateSimpleCondition(condition as ISimpleCondition, log);
+        }
+
+        if (!matched) continue;
+
+        // Frequency threshold check (if specified)
+        const freq = ('frequency' in condition) ? condition.frequency : undefined;
+        const interval = ('intervalMinutes' in condition) ? condition.intervalMinutes : undefined;
+
+        if (freq && interval) {
+          const since = new Date(Date.now() - interval * 60 * 1000).toISOString();
           const count = await LogModel.countDocuments({
             projectId: log.projectId,
-            level: condition.level || log.level,
             timestamp: { $gte: since },
-            ...keywordFilter,
+            level: log.level,
           });
-          if (count < condition.frequency) continue;
+          if (count < freq) continue;
         }
 
         // Check for duplicate alerts to prevent spam
@@ -93,16 +108,9 @@ export class AlertService {
         );
         if (isDuplicate) continue;
 
-        const severity =
-          log.level === "error" || log.level === "fatal"
-            ? "critical"
-            : log.level === "warn"
-            ? "warning"
-            : "info";
+        const severity = this.determineSeverity(log.level);
         const title = `Alert: ${rule.name}`;
-        const message = condition.keyword
-          ? `Matched ${log.level} with keyword "${condition.keyword}"`
-          : `Matched ${log.level} log rule`;
+        const message = rule.description || `Triggered by ${log.level} log`;
 
         const event = await AlertEventModel.create({
           projectId,
@@ -113,44 +121,17 @@ export class AlertService {
           severity,
           notifyChannels: rule.notifyChannels || [],
           metadata: { log },
+          environment: log.environment,
+          service: log.service,
           triggeredAt: new Date(),
+          escalationLevel: rule.escalationPolicyId ? 0 : undefined,
         });
 
-        // Dispatch notifications (best-effort)
-        const cfg = rule.notificationConfig || {};
-        const tasks: Promise<any>[] = [];
-        if (rule.notifyChannels?.includes("email") && cfg.emails?.length) {
-          tasks.push(
-            NotificationService.sendEmail(
-              cfg.emails,
-              title,
-              `${message}\n${log.message}`
-            )
-          );
-        }
-        if (rule.notifyChannels?.includes("slack") && cfg.slackWebhookUrl) {
-          tasks.push(
-            NotificationService.sendSlack(
-              cfg.slackWebhookUrl,
-              `${title}: ${message}`
-            )
-          );
-        }
-        if (rule.notifyChannels?.includes("webhook") && cfg.webhookUrl) {
-          tasks.push(
-            NotificationService.sendWebhook(cfg.webhookUrl, { event })
-          );
-        }
-        Promise.allSettled(tasks).catch(() => {});
+        // Send notifications
+        await this.sendNotifications(event, rule);
 
         // Broadcast via websocket
-        if (globalServices.dashboardWebSocketService) {
-          globalServices.dashboardWebSocketService.broadcastToProject(
-            String(projectId),
-            "NEW_ALERT",
-            { alert: event.toObject() }
-          );
-        }
+        this.broadcastAlert(projectId, event, 'NEW_ALERT');
       }
     } catch (err) {
       console.error("Alert evaluation failed", err);
@@ -327,29 +308,50 @@ export class AlertService {
   static async updateAlertStatus(
     alertId: string,
     status: "acknowledged" | "resolved" | "snoozed",
-    userId?: string
+    userId?: string,
+    resolutionNotes?: string,
+    snoozeDurationMinutes?: number
   ) {
     const updateData: any = {
       $set: {
         status,
         updatedAt: new Date(),
-        ...(status === "acknowledged" ? { acknowledgedAt: new Date() } : {}),
       },
     };
 
+    // Status-specific fields
+    if (status === "acknowledged") {
+      updateData.$set.acknowledgedAt = new Date();
+      if (userId) updateData.$set.acknowledgedBy = new Types.ObjectId(userId);
+    } else if (status === "resolved") {
+      updateData.$set.resolvedAt = new Date();
+      if (userId) updateData.$set.resolvedBy = new Types.ObjectId(userId);
+      if (resolutionNotes) updateData.$set.resolutionNotes = resolutionNotes;
+    } else if (status === "snoozed" && snoozeDurationMinutes) {
+      const snoozedUntil = new Date(Date.now() + snoozeDurationMinutes * 60 * 1000);
+      updateData.$set.snoozedUntil = snoozedUntil;
+      if (userId) updateData.$set.snoozedBy = new Types.ObjectId(userId);
+    }
+
+    // Add to status history
     if (userId) {
       updateData.$push = {
         "metadata.statusHistory": {
           status,
           userId,
           timestamp: new Date(),
+          notes: resolutionNotes,
         },
       };
     }
 
     const alert = await AlertEventModel.findByIdAndUpdate(alertId, updateData, {
       new: true,
-    }).populate("ruleId logId");
+    })
+      .populate("ruleId", "name description")
+      .populate("logId", "message level service timestamp")
+      .populate("acknowledgedBy", "name email")
+      .populate("resolvedBy", "name email");
 
     if (alert) {
       // Broadcast status change
@@ -545,16 +547,428 @@ export class AlertService {
    * Broadcast alert via WebSocket
    */
   private static broadcastAlert(
-    projectId: Types.ObjectId, 
-    event: IAlertEvent, 
+    projectId: Types.ObjectId,
+    event: IAlertEvent,
     eventType = 'NEW_ALERT'
   ) {
     if (globalServices.dashboardWebSocketService) {
       globalServices.dashboardWebSocketService.broadcastToProject(
-        String(projectId), 
-        eventType, 
+        String(projectId),
+        eventType,
         { alert: event.toObject() }
       );
     }
+  }
+
+  // === PHASE 2.2 ENHANCEMENTS ===
+
+  /**
+   * Check if there's an active maintenance window that should suppress this alert
+   */
+  static async checkMaintenanceWindow(
+    projectId: Types.ObjectId | string,
+    log: ILog
+  ): Promise<boolean> {
+    const activeWindows = await MaintenanceWindowModel.findActiveWindows(projectId);
+
+    if (activeWindows.length === 0) return false;
+
+    for (const window of activeWindows) {
+      // Check if window suppresses all alerts
+      if (window.suppressAllAlerts) return true;
+
+      // Check service filter
+      if (window.affectedServices?.length && log.service) {
+        if (window.affectedServices.includes(log.service)) return true;
+      }
+
+      // Check environment filter
+      if (window.affectedEnvironments?.length && log.environment) {
+        if (window.affectedEnvironments.includes(log.environment)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Evaluate a simple condition against a log
+   */
+  private static evaluateSimpleCondition(condition: ISimpleCondition, log: ILog): boolean {
+    // Level match
+    if (condition.level && log.level !== condition.level) return false;
+
+    // Keyword match
+    if (condition.keyword) {
+      const message = (log.message || '').toLowerCase();
+      if (!message.includes(condition.keyword.toLowerCase())) return false;
+    }
+
+    // Service match
+    if (condition.service && log.service !== condition.service) return false;
+
+    // Environment match
+    if (condition.environment && log.environment !== condition.environment) return false;
+
+    // Response time threshold
+    if (condition.responseTimeThreshold && log.responseTime) {
+      if (log.responseTime < condition.responseTimeThreshold) return false;
+    }
+
+    // Event type match
+    if (condition.eventType && log.eventType !== condition.eventType) return false;
+
+    return true;
+  }
+
+  /**
+   * Evaluate a composite condition (AND/OR logic) against a log
+   */
+  private static evaluateCompositeCondition(
+    condition: ICompositeCondition,
+    log: ILog
+  ): boolean {
+    const { operator, conditions } = condition;
+
+    if (operator === 'AND') {
+      return conditions.every((c) => this.evaluateSimpleCondition(c, log));
+    } else {
+      // OR logic
+      return conditions.some((c) => this.evaluateSimpleCondition(c, log));
+    }
+  }
+
+  /**
+   * Test an alert rule against recent logs (dry-run)
+   */
+  static async testAlertRule(
+    ruleId: string,
+    limitLogs = 100
+  ): Promise<{ matched: number; logs: ILog[] }> {
+    const rule = await AlertRuleModel.findById(ruleId);
+    if (!rule) throw new Error('Alert rule not found');
+
+    // Get recent logs for this project
+    const recentLogs = await LogModel.find({ projectId: rule.projectId })
+      .sort({ timestamp: -1 })
+      .limit(limitLogs)
+      .lean();
+
+    const matchedLogs: ILog[] = [];
+    const condition = rule.condition;
+
+    for (const log of recentLogs) {
+      let matched = false;
+
+      // Check if it's a composite condition
+      if ('operator' in condition) {
+        matched = this.evaluateCompositeCondition(condition as ICompositeCondition, log);
+      } else {
+        matched = this.evaluateSimpleCondition(condition as ISimpleCondition, log);
+      }
+
+      if (matched) matchedLogs.push(log);
+    }
+
+    return {
+      matched: matchedLogs.length,
+      logs: matchedLogs.slice(0, 10), // Return first 10 for preview
+    };
+  }
+
+  /**
+   * Get alert analytics (frequency trends, MTTR, noisiest rules)
+   */
+  static async getAlertAnalytics(projectId: string, timeRange = '7d') {
+    const daysMap: Record<string, number> = {
+      '1d': 1,
+      '7d': 7,
+      '30d': 30,
+    };
+    const days = daysMap[timeRange] || 7;
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const projectObjectId = new Types.ObjectId(projectId);
+
+    // Frequency trends (alerts per day)
+    const frequencyTrends = await AlertEventModel.aggregate([
+      {
+        $match: {
+          projectId: projectObjectId,
+          triggeredAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$triggeredAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Noisiest rules (rules triggering most alerts)
+    const noisiestRules = await AlertEventModel.aggregate([
+      {
+        $match: {
+          projectId: projectObjectId,
+          triggeredAt: { $gte: startDate },
+          ruleId: { $exists: true },
+        },
+      },
+      {
+        $group: {
+          _id: '$ruleId',
+          count: { $sum: 1 },
+          lastTriggered: { $max: '$triggeredAt' },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: 'alertrules',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'rule',
+        },
+      },
+      { $unwind: '$rule' },
+      {
+        $project: {
+          ruleId: '$_id',
+          ruleName: '$rule.name',
+          count: 1,
+          lastTriggered: 1,
+        },
+      },
+    ]);
+
+    // Mean Time To Resolution (MTTR)
+    const mttrData = await AlertEventModel.aggregate([
+      {
+        $match: {
+          projectId: projectObjectId,
+          status: 'resolved',
+          resolvedAt: { $exists: true },
+          triggeredAt: { $gte: startDate },
+        },
+      },
+      {
+        $project: {
+          resolutionTime: {
+            $subtract: ['$resolvedAt', '$triggeredAt'],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgMTTR: { $avg: '$resolutionTime' },
+          minMTTR: { $min: '$resolutionTime' },
+          maxMTTR: { $max: '$resolutionTime' },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const mttr = mttrData.length > 0
+      ? {
+          avgMinutes: Math.round((mttrData[0].avgMTTR || 0) / (1000 * 60)),
+          minMinutes: Math.round((mttrData[0].minMTTR || 0) / (1000 * 60)),
+          maxMinutes: Math.round((mttrData[0].maxMTTR || 0) / (1000 * 60)),
+          resolvedCount: mttrData[0].count,
+        }
+      : { avgMinutes: 0, minMinutes: 0, maxMinutes: 0, resolvedCount: 0 };
+
+    // Severity distribution over time
+    const severityDistribution = await AlertEventModel.aggregate([
+      {
+        $match: {
+          projectId: projectObjectId,
+          triggeredAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$severity',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    return {
+      frequencyTrends,
+      noisiestRules,
+      mttr,
+      severityDistribution,
+      timeRange,
+    };
+  }
+
+  /**
+   * Get alert timeline for incident tracking
+   */
+  static async getAlertTimeline(
+    projectId: string,
+    startDate: Date,
+    endDate: Date
+  ) {
+    const timeline = await AlertEventModel.find({
+      projectId: new Types.ObjectId(projectId),
+      triggeredAt: { $gte: startDate, $lte: endDate },
+    })
+      .sort({ triggeredAt: 1 })
+      .populate('ruleId', 'name')
+      .populate('logId', 'message level service')
+      .populate('acknowledgedBy', 'name email')
+      .populate('resolvedBy', 'name email')
+      .lean();
+
+    // Group by severity and status for summary
+    const summary = {
+      total: timeline.length,
+      bySeverity: {
+        info: timeline.filter((a) => a.severity === 'info').length,
+        warning: timeline.filter((a) => a.severity === 'warning').length,
+        critical: timeline.filter((a) => a.severity === 'critical').length,
+      },
+      byStatus: {
+        active: timeline.filter((a) => a.status === 'active').length,
+        acknowledged: timeline.filter((a) => a.status === 'acknowledged').length,
+        resolved: timeline.filter((a) => a.status === 'resolved').length,
+        snoozed: timeline.filter((a) => a.status === 'snoozed').length,
+      },
+    };
+
+    return { timeline, summary };
+  }
+
+  /**
+   * Process escalation for unacknowledged alerts
+   * (Called by a background job periodically)
+   */
+  static async processEscalations() {
+    // Find alerts that have escalation policies and are still active
+    const alertsWithEscalation = await AlertEventModel.aggregate([
+      {
+        $match: {
+          status: 'active',
+          escalationLevel: { $exists: true },
+        },
+      },
+      {
+        $lookup: {
+          from: 'alertrules',
+          localField: 'ruleId',
+          foreignField: '_id',
+          as: 'rule',
+        },
+      },
+      { $unwind: '$rule' },
+      {
+        $match: {
+          'rule.escalationPolicyId': { $exists: true, $ne: null },
+        },
+      },
+    ]);
+
+    for (const alert of alertsWithEscalation) {
+      const rule = alert.rule;
+      const policy = await EscalationPolicyModel.findById(rule.escalationPolicyId);
+      if (!policy || !policy.isActive) continue;
+
+      const currentLevel = alert.escalationLevel || 0;
+      const nextLevel = policy.levels.find((l) => l.level === currentLevel + 1);
+      if (!nextLevel) continue; // No more escalation levels
+
+      // Check if enough time has passed for escalation
+      const lastEscalatedAt = alert.lastEscalatedAt || alert.triggeredAt;
+      const minutesSinceLastEscalation =
+        (Date.now() - new Date(lastEscalatedAt).getTime()) / (1000 * 60);
+
+      if (minutesSinceLastEscalation >= nextLevel.delayMinutes) {
+        // Escalate!
+        await AlertEventModel.findByIdAndUpdate(alert._id, {
+          $set: {
+            escalationLevel: nextLevel.level,
+            lastEscalatedAt: new Date(),
+          },
+        });
+
+        // Send escalation notifications
+        const escalationTitle = `🔺 ESCALATED: ${alert.title} (Level ${nextLevel.level})`;
+        const escalationMessage = `Alert has been escalated to level ${nextLevel.level}\n\nOriginal message: ${alert.message}\n\nTriggered at: ${alert.triggeredAt}`;
+
+        const tasks: Promise<any>[] = [];
+
+        if (nextLevel.notifyChannels.includes('email')) {
+          tasks.push(
+            NotificationService.sendEmail(
+              nextLevel.recipients,
+              escalationTitle,
+              escalationMessage
+            )
+          );
+        }
+
+        if (nextLevel.notifyChannels.includes('slack') && nextLevel.webhookUrl) {
+          tasks.push(
+            NotificationService.sendSlack(nextLevel.webhookUrl, {
+              text: escalationTitle,
+              attachments: [
+                {
+                  color: 'danger',
+                  fields: [
+                    { title: 'Level', value: `${nextLevel.level}`, short: true },
+                    { title: 'Severity', value: alert.severity, short: true },
+                    { title: 'Message', value: escalationMessage, short: false },
+                  ],
+                },
+              ],
+            })
+          );
+        }
+
+        if (nextLevel.notifyChannels.includes('webhook') && nextLevel.webhookUrl) {
+          tasks.push(
+            NotificationService.sendWebhook(nextLevel.webhookUrl, {
+              type: 'alert.escalated',
+              alert,
+              escalationLevel: nextLevel.level,
+            })
+          );
+        }
+
+        await Promise.allSettled(tasks);
+
+        console.log(
+          `Escalated alert ${alert._id} to level ${nextLevel.level} for project ${alert.projectId}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Snooze an alert rule for a specified duration
+   */
+  static async snoozeAlertRule(
+    ruleId: string,
+    durationMinutes: number,
+    userId?: string
+  ) {
+    const snoozeUntil = new Date(Date.now() + durationMinutes * 60 * 1000);
+
+    const rule = await AlertRuleModel.findByIdAndUpdate(
+      ruleId,
+      {
+        $set: { snoozeUntil },
+      },
+      { new: true }
+    );
+
+    return rule;
   }
 }

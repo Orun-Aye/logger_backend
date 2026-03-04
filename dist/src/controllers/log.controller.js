@@ -309,5 +309,95 @@ class LogController {
             return LogController.handleError(error, res, "Failed to fetch unique error messages");
         }
     }
+    // --- Batch Operations ---
+    static async batchCreateLogs(req, res) {
+        try {
+            const { projectId } = req.params;
+            const batchData = req.body; // BatchLogDTO
+            if (!batchData.logs || !Array.isArray(batchData.logs)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Request body must contain a 'logs' array",
+                });
+            }
+            const result = await log_service_1.LogService.batchCreate(projectId, batchData);
+            return res.status(201).json({
+                status: "success",
+                message: `Batch processing complete: ${result.success} succeeded, ${result.failed} failed`,
+                data: result,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to process batch log creation");
+        }
+    }
+    // --- Advanced Search ---
+    static async structuredSearch(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { query } = req.body;
+            if (!query || typeof query !== "string") {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Request body must contain a 'query' string field",
+                });
+            }
+            const page = Math.max(1, parseInt(req.body.page) || 1);
+            const limit = Math.min(1000, Math.max(1, parseInt(req.body.limit) || 100));
+            const result = await log_service_1.LogService.structuredSearch(projectId, query, page, limit);
+            return res.status(200).json({
+                status: "success",
+                message: "Structured search executed successfully",
+                data: result.logs,
+                meta: {
+                    pagination: result.pagination,
+                    query: query,
+                },
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to execute structured search");
+        }
+    }
+    // --- Export Operations ---
+    static async exportLogs(req, res) {
+        try {
+            const { projectId } = req.params;
+            const exportOptions = req.body; // ExportLogsQueryDTO
+            if (!exportOptions.format || !["csv", "json"].includes(exportOptions.format)) {
+                res.status(400).json({
+                    status: "error",
+                    message: "Export format must be either 'csv' or 'json'",
+                });
+                return;
+            }
+            const stream = await log_service_1.LogService.exportLogs(projectId, exportOptions);
+            // Set appropriate headers for file download
+            const timestamp = new Date().toISOString().split("T")[0];
+            const filename = `logs-${projectId}-${timestamp}.${exportOptions.format}`;
+            const contentType = exportOptions.format === "csv"
+                ? "text/csv"
+                : "application/json";
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+            res.setHeader("Transfer-Encoding", "chunked");
+            // Pipe the stream to the response
+            stream.pipe(res);
+            stream.on("error", (error) => {
+                console.error("Export stream error:", error);
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        status: "error",
+                        message: "Failed to export logs",
+                    });
+                }
+            });
+        }
+        catch (error) {
+            if (!res.headersSent) {
+                LogController.handleError(error, res, "Failed to export logs");
+            }
+        }
+    }
 }
 exports.LogController = LogController;

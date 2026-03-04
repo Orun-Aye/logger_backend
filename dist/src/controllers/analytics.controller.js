@@ -387,6 +387,25 @@ class AnalyticsController {
         }
     }
     // ============================================================================
+    // ENVIRONMENT ANALYTICS
+    // ============================================================================
+    static async getEnvironmentStats(req, res) {
+        try {
+            const { projectId } = req.params;
+            const timeRange = req.query.timeRange || "7d";
+            const data = await analytics_service_1.AnalyticsService.getEnvironmentStats(projectId, { timeRange });
+            return res.status(200).json({
+                status: "success",
+                message: "Environment statistics retrieved",
+                data,
+                meta: { projectId, timeRange },
+            });
+        }
+        catch (error) {
+            return AnalyticsController.handleError(error, res, "Failed to fetch environment statistics");
+        }
+    }
+    // ============================================================================
     // CROSS-DASHBOARD UTILITIES
     // ============================================================================
     static async getDashboardOverview(req, res) {

@@ -15,6 +15,7 @@ import logger from "./utils/logger";
 import healthRoutes from "./routes/health.routes";
 import projectRoutes from "./routes/project.routes";
 import sdkConfigRoutes from "./routes/sdk-config.routes";
+import sdkConfigPublicRoutes from "./routes/sdk-config-public.routes";
 import logRoutes from "./routes/log.routes";
 import alertRuleRoutes from "./routes/alertRule.routes";
 import userRoutes from "./routes/user.routes";
@@ -23,10 +24,26 @@ import analyticsRoutes from "./routes/analytics.routes";
 import alertEventRoutes from "./routes/alertEvent.routes";
 import notificationRoutes from "./routes/notification.routes";
 import insightsRoutes from "./routes/insights.routes";
+import savedSearchRoutes from "./routes/savedSearch.routes";
+import retentionRoutes from "./routes/retention.routes";
+import userPreferenceRoutes from "./routes/userPreference.routes";
+// Phase 2.2 routes
+import escalationPolicyRoutes from "./routes/escalationPolicy.routes";
+import maintenanceWindowRoutes from "./routes/maintenanceWindow.routes";
+import customDashboardRoutes from "./routes/customDashboard.routes";
+// Phase 2.3 routes
+import funnelRoutes from "./routes/funnel.routes";
+import regressionRoutes from "./routes/regression.routes";
+import aiSuggestionRoutes from "./routes/aiSuggestion.routes";
+// Phase 2.5 routes
+import traceRoutes from "./routes/trace.routes";
+import webVitalsRoutes from "./routes/webVitals.routes";
+import sourceMapRoutes from "./routes/sourceMap.routes";
 
 // Services
 import { DashboardWebSocketService } from "./services/websocket.service";
 import { initializeRedis } from "./utils/db";
+import { initializeJobs } from "./jobs";
 
 // Initialize configuration (validates environment variables)
 initializeConfig();
@@ -474,16 +491,33 @@ app.use("/api/v1", healthRoutes);
 
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, userRoutes);
-app.use("/api/v1/projects", restrictedCors, projectRoutes, sdkConfigRoutes);
+app.use("/api/v1/projects", restrictedCors, projectRoutes, sdkConfigRoutes, savedSearchRoutes);
 app.use("/api/v1/alert-rules", restrictedCors, alertRuleRoutes);
 app.use("/api/v1/dashboard", restrictedCors, dashboardRoutes);
 app.use("/api/v1/alerts", restrictedCors, alertEventRoutes);
 app.use("/api/v1/notifications", restrictedCors, notificationRoutes);
 app.use('/api/v1/analytics', restrictedCors, analyticsRoutes);
 app.use("/api/v1/insights", restrictedCors, insightsRoutes);
+app.use("/api/v1/retention", restrictedCors, retentionRoutes);
+app.use("/api/v1/preferences", restrictedCors, userPreferenceRoutes);
+// Phase 2.2 routes
+app.use("/api/v1/escalation-policies", restrictedCors, escalationPolicyRoutes);
+app.use("/api/v1/maintenance-windows", restrictedCors, maintenanceWindowRoutes);
+app.use("/api/v1/custom-dashboards", restrictedCors, customDashboardRoutes);
+// Phase 2.3 routes
+app.use("/api/v1/funnels", restrictedCors, funnelRoutes);
+app.use("/api/v1/regressions", restrictedCors, regressionRoutes);
+app.use("/api/v1/ai-suggestions", restrictedCors, aiSuggestionRoutes);
+// Phase 2.5 routes
+app.use("/api/v1", restrictedCors, traceRoutes);
+app.use("/api/v1", restrictedCors, webVitalsRoutes);
+app.use("/api/v1", logIngestionCors, sourceMapRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
+
+// SDK remote config (API key auth, open CORS — SDK fetches from any origin)
+app.use("/api/v1/sdk-config", logIngestionCors, sdkConfigPublicRoutes);
 
 
 // WEBSOCKET INITIALIZATION
@@ -509,6 +543,10 @@ if (!isVercel) {
       // Set global query timeouts
       setGlobalQueryTimeout();
       logger.info("Query timeouts configured");
+
+      // Initialize background jobs
+      initializeJobs({ retention: config.retention });
+      logger.info("Background jobs initialized");
 
       // Start server
       server.listen(config.server.port, () => {

@@ -1,7 +1,7 @@
 "use strict";
 // src/validators/project.validator.ts
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.integrationSettingsSchema = exports.listProjectsQuerySchema = exports.bulkUpdateProjectsSchema = exports.bulkDeleteProjectsSchema = exports.duplicateProjectBodySchema = exports.duplicateProjectParamSchema = exports.transferOwnershipSchema = exports.rateLimitConfigSchema = exports.tagsSchema = exports.updateTeamMemberRoleSchema = exports.removeTeamMemberSchema = exports.addTeamMemberSchema = exports.projectIdParamSchema = exports.updateProjectSchema = exports.createProjectSchema = void 0;
+exports.samplingConfigSchema = exports.integrationSettingsSchema = exports.listProjectsQuerySchema = exports.bulkUpdateProjectsSchema = exports.bulkDeleteProjectsSchema = exports.duplicateProjectBodySchema = exports.duplicateProjectParamSchema = exports.transferOwnershipSchema = exports.rateLimitConfigSchema = exports.tagsSchema = exports.updateTeamMemberRoleSchema = exports.removeTeamMemberSchema = exports.addTeamMemberSchema = exports.projectIdParamSchema = exports.updateProjectSchema = exports.createProjectSchema = void 0;
 const zod_1 = require("zod");
 /**
  * MongoDB ObjectId regex pattern
@@ -172,4 +172,16 @@ exports.integrationSettingsSchema = zod_1.z.object({
         headers: zod_1.z.record(zod_1.z.string()).optional(),
     })
         .optional(),
+});
+/**
+ * Schema for sampling configuration
+ */
+exports.samplingConfigSchema = zod_1.z.object({
+    enabled: zod_1.z.boolean(),
+    mode: zod_1.z.enum(["rate", "percentage"]),
+    value: zod_1.z.number().min(1).max(1000),
+    alwaysKeepLevels: zod_1.z
+        .array(zod_1.z.enum(["trace", "debug", "info", "warn", "error", "fatal"]))
+        .optional()
+        .default(["error", "fatal"]),
 });

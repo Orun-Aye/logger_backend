@@ -14,13 +14,19 @@ export interface IUser extends Document {
     avatarUrl?: string;
     accessToken?: string;
     refreshToken?: string;
+
+    resetPasswordToken?: string;
+    resetPasswordExpires?: Date;
 }
 
 const UserSchema: Schema<IUser> = new Schema({
     email: { type: String, required: true, unique: true, sparse: true },
     firstName: { type: String, required: true },
     lastName: { type: String, required: true},
-    password: { type: String, required: true },
+    password: {
+      type: String,
+      required: function(this: IUser) { return !this.oauthProvider; }
+    },
     role: { type: String, enum: ["developer", "admin"], default: "developer" },
     joinedAt: { type: Date, default: Date.now },
 
@@ -28,7 +34,10 @@ const UserSchema: Schema<IUser> = new Schema({
     oauthId: { type: String, unique: true, sparse: true },
     avatarUrl: { type: String },
     accessToken: { type: String },
-    refreshToken: { type: String }
+    refreshToken: { type: String },
+
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
 }, {
     timestamps: true,
 })

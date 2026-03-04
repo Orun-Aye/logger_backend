@@ -39,14 +39,19 @@ const UserSchema = new mongoose_1.Schema({
     email: { type: String, required: true, unique: true, sparse: true },
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    password: { type: String, required: true },
+    password: {
+        type: String,
+        required: function () { return !this.oauthProvider; }
+    },
     role: { type: String, enum: ["developer", "admin"], default: "developer" },
     joinedAt: { type: Date, default: Date.now },
     oauthProvider: { type: String },
     oauthId: { type: String, unique: true, sparse: true },
     avatarUrl: { type: String },
     accessToken: { type: String },
-    refreshToken: { type: String }
+    refreshToken: { type: String },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
 }, {
     timestamps: true,
 });

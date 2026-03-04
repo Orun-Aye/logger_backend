@@ -185,6 +185,21 @@ export const integrationSettingsSchema = z.object({
     .optional(),
 });
 
+/**
+ * Schema for sampling configuration
+ */
+export const samplingConfigSchema = z.object({
+  enabled: z.boolean(),
+  mode: z.enum(["rate", "percentage"]),
+  value: z.number().min(1).max(1000),
+  alwaysKeepLevels: z
+    .array(z.enum(["trace", "debug", "info", "warn", "error", "fatal"]))
+    .optional()
+    .default(["error", "fatal"]),
+});
+
+export type SamplingConfigInput = z.infer<typeof samplingConfigSchema>;
+
 // Type exports
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

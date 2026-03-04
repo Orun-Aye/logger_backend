@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const userPreference_controller_1 = require("../controllers/userPreference.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const validation_middleware_1 = require("../middleware/validation.middleware");
+const userPreference_validator_1 = require("../validators/userPreference.validator");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.verifyToken);
+router.get("/favorites", userPreference_controller_1.UserPreferenceController.getFavorites);
+router.post("/favorites", (0, validation_middleware_1.validate)(userPreference_validator_1.favoriteProjectSchema, "body"), userPreference_controller_1.UserPreferenceController.addFavorite);
+router.delete("/favorites", (0, validation_middleware_1.validate)(userPreference_validator_1.favoriteProjectSchema, "body"), userPreference_controller_1.UserPreferenceController.removeFavorite);
+router.get("/favorites/:projectId", userPreference_controller_1.UserPreferenceController.checkFavorite);
+exports.default = router;

@@ -450,6 +450,28 @@ export class AnalyticsController {
   }
 
   // ============================================================================
+  // ENVIRONMENT ANALYTICS
+  // ============================================================================
+
+  static async getEnvironmentStats(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const timeRange = (req.query.timeRange as string) || "7d";
+
+      const data = await AnalyticsService.getEnvironmentStats(projectId, { timeRange });
+
+      return res.status(200).json({
+        status: "success",
+        message: "Environment statistics retrieved",
+        data,
+        meta: { projectId, timeRange },
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, "Failed to fetch environment statistics");
+    }
+  }
+
+  // ============================================================================
   // CROSS-DASHBOARD UTILITIES
   // ============================================================================
 

@@ -6,6 +6,7 @@ import {
   ProjectOperationError,
 } from "../services/project.service";
 import { CreateProjectDTO, UpdateProjectDTO } from "../dtos/project.dto";
+import { ProjectModel } from "../models/project.model";
 import { Types } from "mongoose";
 
 /**
@@ -767,6 +768,41 @@ export class ProjectController {
         res,
         "Failed to update rate limit configuration"
       );
+    }
+  }
+
+  // =============================================================================
+  // SAMPLING CONFIGURATION
+  // =============================================================================
+
+  /**
+   * Updates sampling configuration for a project
+   * PUT /api/projects/:projectId/sampling-config
+   *
+   * Body: { enabled: boolean, mode: "rate"|"percentage", value: number, alwaysKeepLevels?: string[] }
+   */
+  static async updateSamplingConfig(req: Request, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const samplingConfig = req.body;
+
+      const project = await ProjectModel.findByIdAndUpdate(
+        projectId,
+        { $set: { samplingConfig } },
+        { new: true, runValidators: true }
+      );
+
+      if (!project) {
+        return res.status(404).json({ status: "error", message: "Project not found" });
+      }
+
+      return res.status(200).json({
+        status: "success",
+        message: "Sampling configuration updated",
+        data: { samplingConfig: project.samplingConfig },
+      });
+    } catch (error: any) {
+      return res.status(500).json({ status: "error", message: error.message });
     }
   }
 

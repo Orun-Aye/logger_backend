@@ -19,6 +19,7 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const health_routes_1 = __importDefault(require("./routes/health.routes"));
 const project_routes_1 = __importDefault(require("./routes/project.routes"));
 const sdk_config_routes_1 = __importDefault(require("./routes/sdk-config.routes"));
+const sdk_config_public_routes_1 = __importDefault(require("./routes/sdk-config-public.routes"));
 const log_routes_1 = __importDefault(require("./routes/log.routes"));
 const alertRule_routes_1 = __importDefault(require("./routes/alertRule.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
@@ -27,9 +28,21 @@ const analytics_routes_1 = __importDefault(require("./routes/analytics.routes"))
 const alertEvent_routes_1 = __importDefault(require("./routes/alertEvent.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
 const insights_routes_1 = __importDefault(require("./routes/insights.routes"));
+const savedSearch_routes_1 = __importDefault(require("./routes/savedSearch.routes"));
+const retention_routes_1 = __importDefault(require("./routes/retention.routes"));
+const userPreference_routes_1 = __importDefault(require("./routes/userPreference.routes"));
+// Phase 2.2 routes
+const escalationPolicy_routes_1 = __importDefault(require("./routes/escalationPolicy.routes"));
+const maintenanceWindow_routes_1 = __importDefault(require("./routes/maintenanceWindow.routes"));
+const customDashboard_routes_1 = __importDefault(require("./routes/customDashboard.routes"));
+// Phase 2.3 routes
+const funnel_routes_1 = __importDefault(require("./routes/funnel.routes"));
+const regression_routes_1 = __importDefault(require("./routes/regression.routes"));
+const aiSuggestion_routes_1 = __importDefault(require("./routes/aiSuggestion.routes"));
 // Services
 const websocket_service_1 = require("./services/websocket.service");
 const db_1 = require("./utils/db");
+const jobs_1 = require("./jobs");
 // Initialize configuration (validates environment variables)
 (0, config_1.initializeConfig)();
 const app = (0, express_1.default)();
@@ -468,15 +481,27 @@ Authorization: Bearer YOUR_JWT_TOKEN
 app.use("/api/v1", health_routes_1.default);
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, user_routes_1.default);
-app.use("/api/v1/projects", restrictedCors, project_routes_1.default, sdk_config_routes_1.default);
+app.use("/api/v1/projects", restrictedCors, project_routes_1.default, sdk_config_routes_1.default, savedSearch_routes_1.default);
 app.use("/api/v1/alert-rules", restrictedCors, alertRule_routes_1.default);
 app.use("/api/v1/dashboard", restrictedCors, dashboard_routes_1.default);
 app.use("/api/v1/alerts", restrictedCors, alertEvent_routes_1.default);
 app.use("/api/v1/notifications", restrictedCors, notification_routes_1.default);
 app.use('/api/v1/analytics', restrictedCors, analytics_routes_1.default);
 app.use("/api/v1/insights", restrictedCors, insights_routes_1.default);
+app.use("/api/v1/retention", restrictedCors, retention_routes_1.default);
+app.use("/api/v1/preferences", restrictedCors, userPreference_routes_1.default);
+// Phase 2.2 routes
+app.use("/api/v1/escalation-policies", restrictedCors, escalationPolicy_routes_1.default);
+app.use("/api/v1/maintenance-windows", restrictedCors, maintenanceWindow_routes_1.default);
+app.use("/api/v1/custom-dashboards", restrictedCors, customDashboard_routes_1.default);
+// Phase 2.3 routes
+app.use("/api/v1/funnels", restrictedCors, funnel_routes_1.default);
+app.use("/api/v1/regressions", restrictedCors, regression_routes_1.default);
+app.use("/api/v1/ai-suggestions", restrictedCors, aiSuggestion_routes_1.default);
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, log_routes_1.default);
+// SDK remote config (API key auth, open CORS — SDK fetches from any origin)
+app.use("/api/v1/sdk-config", logIngestionCors, sdk_config_public_routes_1.default);
 // WEBSOCKET INITIALIZATION
 exports.globalServices = {
     dashboardWebSocketService: new websocket_service_1.DashboardWebSocketService(server, config_1.config.jwt.secret),
@@ -496,6 +521,9 @@ if (!isVercel) {
             // Set global query timeouts
             (0, query_timeout_1.setGlobalQueryTimeout)();
             logger_1.default.info("Query timeouts configured");
+            // Initialize background jobs
+            (0, jobs_1.initializeJobs)({ retention: config_1.config.retention });
+            logger_1.default.info("Background jobs initialized");
             // Start server
             server.listen(config_1.config.server.port, () => {
                 logger_1.default.info(`Server running on port ${config_1.config.server.port}`, {

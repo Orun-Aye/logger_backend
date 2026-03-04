@@ -24,6 +24,16 @@ const ProjectSchema = new mongoose_1.Schema({
     },
     tags: { type: [String], default: [] },
     lastIngestedAt: { type: Date },
+    retentionConfig: {
+        retentionDays: { type: Number, default: 30 },
+        autoCleanupEnabled: { type: Boolean, default: true },
+    },
+    samplingConfig: {
+        enabled: { type: Boolean, default: false },
+        mode: { type: String, enum: ["rate", "percentage"], default: "percentage" },
+        value: { type: Number, default: 100, min: 1, max: 1000 },
+        alwaysKeepLevels: { type: [String], default: ["error", "fatal"] },
+    },
 }, {
     timestamps: true,
 });
