@@ -2,6 +2,7 @@ import { Types } from "mongoose"
 import { LogModel } from "../models/log.model"
 import { ProjectModel } from "../models/project.model"
 import { DashboardFilters, timeRange } from "../types/app";
+import { getPreviousPeriod } from "../utils/time.utils";
 
 // Custom error classes following ProjectService pattern
 export class DashboardValidationError extends Error {
@@ -1088,6 +1089,121 @@ export class DashboardService {
         { userId, originalError: error }
       );
     }
+  }
+
+  /**
+   * Get dashboard metrics with period-over-period comparison.
+   * Runs current and previous period queries in parallel, then computes % change.
+   */
+  static async getDashboardMetricsWithComparison(
+    filters: DashboardFiltersWithUser
+  ): Promise<{
+    current: DashboardMetrics;
+    comparison: {
+      totalLogs: { current: number; previous: number; change: number };
+      totalErrors: { current: number; previous: number; change: number };
+      errorRate: { current: number; previous: number; change: number };
+      averageResponseTime: { current: number; previous: number; change: number };
+      totalWarnings: { current: number; previous: number; change: number };
+    };
+    sparklines: {
+      logs: number[];
+      errors: number[];
+      errorRate: number[];
+      responseTime: number[];
+    };
+  }> {
+    try {
+      // Build previous-period filters
+      const prevPeriod = getPreviousPeriod(filters.timeRange.start, filters.timeRange.end);
+      const prevFilters: DashboardFiltersWithUser = {
+        ...filters,
+        timeRange: { start: prevPeriod.start, end: prevPeriod.end },
+      };
+
+      // Run both periods in parallel
+      const [current, previous] = await Promise.all([
+        this.getDashboardMetrics(filters),
+        this.getDashboardMetrics(prevFilters),
+      ]);
+
+      const pctChange = (cur: number, prev: number): number => {
+        if (prev === 0) return cur > 0 ? 100 : 0;
+        return Math.round(((cur - prev) / prev) * 10000) / 100;
+      };
+
+      const comparison = {
+        totalLogs: {
+          current: current.totalLogs,
+          previous: previous.totalLogs,
+          change: pctChange(current.totalLogs, previous.totalLogs),
+        },
+        totalErrors: {
+          current: current.totalErrors,
+          previous: previous.totalErrors,
+          change: pctChange(current.totalErrors, previous.totalErrors),
+        },
+        errorRate: {
+          current: current.averageErrorRate,
+          previous: previous.averageErrorRate,
+          change: pctChange(current.averageErrorRate, previous.averageErrorRate),
+        },
+        averageResponseTime: {
+          current: current.averageResponseTime,
+          previous: previous.averageResponseTime,
+          change: pctChange(current.averageResponseTime, previous.averageResponseTime),
+        },
+        totalWarnings: {
+          current: current.totalWarnings,
+          previous: previous.totalWarnings,
+          change: pctChange(current.totalWarnings, previous.totalWarnings),
+        },
+      };
+
+      // Build sparklines from logsOverTime (12-point compact series)
+      const sparklines = this.buildSparklines(current.logsOverTime);
+
+      return { current, comparison, sparklines };
+    } catch (error) {
+      if (error instanceof DashboardValidationError) {
+        throw error;
+      }
+      throw new DashboardOperationError(
+        `Failed to get dashboard metrics with comparison: ${error}`,
+        { filters, originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Build 12-point sparkline arrays from time series data.
+   * Groups time series into ~12 buckets for compact display.
+   */
+  private static buildSparklines(
+    logsOverTime: Array<{ timestamp: Date; total: number; errors: number; warnings: number; info: number }>
+  ): { logs: number[]; errors: number[]; errorRate: number[]; responseTime: number[] } {
+    if (!logsOverTime || logsOverTime.length === 0) {
+      return { logs: [], errors: [], errorRate: [], responseTime: [] };
+    }
+
+    const targetPoints = 12;
+    const bucketSize = Math.max(1, Math.ceil(logsOverTime.length / targetPoints));
+    const logs: number[] = [];
+    const errors: number[] = [];
+    const errorRate: number[] = [];
+
+    for (let i = 0; i < logsOverTime.length; i += bucketSize) {
+      const slice = logsOverTime.slice(i, i + bucketSize);
+      const totalSum = slice.reduce((s, p) => s + p.total, 0);
+      const errorSum = slice.reduce((s, p) => s + p.errors, 0);
+      logs.push(totalSum);
+      errors.push(errorSum);
+      errorRate.push(totalSum > 0 ? Math.round((errorSum / totalSum) * 10000) / 100 : 0);
+    }
+
+    // responseTime sparkline: we don't have per-bucket RT in logsOverTime,
+    // so we return an empty array (filled by dedicated RT query if needed)
+    return { logs, errors, errorRate, responseTime: [] };
   }
 
   /**

@@ -95,6 +95,73 @@ router.get('/:projectId/sessions/:sessionId/timeline', AnalyticsController.getSe
 router.get('/:projectId/environments/stats', AnalyticsController.getEnvironmentStats);
 
 // ============================================================================
+// NETWORK ANALYTICS
+// ============================================================================
+
+// Get network overview (total requests, failure rate, avg duration, status distribution)
+router.get('/:projectId/network/overview', AnalyticsController.getNetworkOverview);
+
+// Get paginated network requests with filters
+router.get('/:projectId/network/requests', AnalyticsController.getNetworkRequests);
+
+// Get network request timeline (hourly/daily aggregation)
+router.get('/:projectId/network/timeline', AnalyticsController.getNetworkTimeline);
+
+// Get top network endpoints by request count
+router.get('/:projectId/network/top-endpoints', AnalyticsController.getNetworkTopEndpoints);
+
+// Get slowest network endpoints
+router.get('/:projectId/network/slowest', AnalyticsController.getNetworkSlowest);
+
+// ============================================================================
+// INTERACTION ANALYTICS
+// ============================================================================
+
+// Get interaction overview (clicks, scrolls, keypresses with period comparison)
+router.get('/:projectId/interactions/overview', AnalyticsController.getInteractionOverview);
+
+// Get interaction timeline (hourly/daily by type)
+router.get('/:projectId/interactions/timeline', AnalyticsController.getInteractionTimeline);
+
+// Get top clicked elements
+router.get('/:projectId/interactions/top-elements', AnalyticsController.getInteractionTopElements);
+
+// Get most interacted elements (all types)
+router.get('/:projectId/interactions/most-clicked', AnalyticsController.getInteractionMostClicked);
+
+// ============================================================================
+// CONSOLE ANALYTICS
+// ============================================================================
+
+// Get console overview (total, by level, with period comparison)
+router.get('/:projectId/console/overview', AnalyticsController.getConsoleOverview);
+
+// Get paginated console messages with filters
+router.get('/:projectId/console/messages', AnalyticsController.getConsoleMessages);
+
+// Get console message timeline (hourly/daily by level)
+router.get('/:projectId/console/timeline', AnalyticsController.getConsoleTimeline);
+
+// ============================================================================
+// PAGEVIEW ANALYTICS
+// ============================================================================
+
+// Get pageview overview (total, unique pages, top page, period comparison)
+router.get('/:projectId/pageviews/overview', AnalyticsController.getPageviewOverview);
+
+// Get pageview timeline (hourly/daily counts)
+router.get('/:projectId/pageviews/timeline', AnalyticsController.getPageviewTimeline);
+
+// Get top pages by views
+router.get('/:projectId/pageviews/top-pages', AnalyticsController.getPageviewTopPages);
+
+// Get pageview referrers
+router.get('/:projectId/pageviews/referrers', AnalyticsController.getPageviewReferrers);
+
+// Get page navigation flow (from -> to transitions)
+router.get('/:projectId/pageviews/navigation-flow', AnalyticsController.getPageviewNavigationFlow);
+
+// ============================================================================
 // CROSS-DASHBOARD UTILITIES
 // ============================================================================
 

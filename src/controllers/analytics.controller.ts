@@ -472,6 +472,367 @@ export class AnalyticsController {
   }
 
   // ============================================================================
+  // NETWORK ANALYTICS
+  // ============================================================================
+
+  static async getNetworkOverview(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h' } = req.query;
+
+      const data = await AnalyticsService.getNetworkOverview(projectId, {
+        timeRange: timeRange as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Network overview fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch network overview');
+    }
+  }
+
+  static async getNetworkRequests(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', page = '1', limit = '20', status, method, search } = req.query;
+
+      const data = await AnalyticsService.getNetworkRequests(projectId, {
+        timeRange: timeRange as string,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        status: status as string,
+        method: method as string,
+        search: search as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Network requests fetched successfully',
+        data: data.requests,
+        meta: data.pagination,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch network requests');
+    }
+  }
+
+  static async getNetworkTimeline(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', granularity = 'hour' } = req.query;
+
+      const data = await AnalyticsService.getNetworkTimeline(projectId, {
+        timeRange: timeRange as string,
+        granularity: granularity as 'hour' | 'day',
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Network timeline fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch network timeline');
+    }
+  }
+
+  static async getNetworkTopEndpoints(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getNetworkTopEndpoints(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Top network endpoints fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch top network endpoints');
+    }
+  }
+
+  static async getNetworkSlowest(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getNetworkSlowest(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Slowest network endpoints fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch slowest network endpoints');
+    }
+  }
+
+  // ============================================================================
+  // INTERACTION ANALYTICS
+  // ============================================================================
+
+  static async getInteractionOverview(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h' } = req.query;
+
+      const data = await AnalyticsService.getInteractionOverview(projectId, {
+        timeRange: timeRange as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Interaction overview fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch interaction overview');
+    }
+  }
+
+  static async getInteractionTimeline(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', granularity = 'hour' } = req.query;
+
+      const data = await AnalyticsService.getInteractionTimeline(projectId, {
+        timeRange: timeRange as string,
+        granularity: granularity as 'hour' | 'day',
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Interaction timeline fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch interaction timeline');
+    }
+  }
+
+  static async getInteractionTopElements(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getInteractionTopElements(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Top interaction elements fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch top interaction elements');
+    }
+  }
+
+  static async getInteractionMostClicked(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getInteractionMostClicked(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Most clicked elements fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch most clicked elements');
+    }
+  }
+
+  // ============================================================================
+  // CONSOLE ANALYTICS
+  // ============================================================================
+
+  static async getConsoleOverview(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h' } = req.query;
+
+      const data = await AnalyticsService.getConsoleOverview(projectId, {
+        timeRange: timeRange as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Console overview fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch console overview');
+    }
+  }
+
+  static async getConsoleMessages(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', page = '1', limit = '20', level, search } = req.query;
+
+      const data = await AnalyticsService.getConsoleMessages(projectId, {
+        timeRange: timeRange as string,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        level: level as string,
+        search: search as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Console messages fetched successfully',
+        data: data.messages,
+        meta: data.pagination,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch console messages');
+    }
+  }
+
+  static async getConsoleTimeline(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', granularity = 'hour' } = req.query;
+
+      const data = await AnalyticsService.getConsoleTimeline(projectId, {
+        timeRange: timeRange as string,
+        granularity: granularity as 'hour' | 'day',
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Console timeline fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch console timeline');
+    }
+  }
+
+  // ============================================================================
+  // PAGEVIEW ANALYTICS
+  // ============================================================================
+
+  static async getPageviewOverview(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h' } = req.query;
+
+      const data = await AnalyticsService.getPageviewOverview(projectId, {
+        timeRange: timeRange as string,
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Pageview overview fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch pageview overview');
+    }
+  }
+
+  static async getPageviewTimeline(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', granularity = 'hour' } = req.query;
+
+      const data = await AnalyticsService.getPageviewTimeline(projectId, {
+        timeRange: timeRange as string,
+        granularity: granularity as 'hour' | 'day',
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Pageview timeline fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch pageview timeline');
+    }
+  }
+
+  static async getPageviewTopPages(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getPageviewTopPages(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Top pages fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch top pages');
+    }
+  }
+
+  static async getPageviewReferrers(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '10' } = req.query;
+
+      const data = await AnalyticsService.getPageviewReferrers(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Pageview referrers fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch pageview referrers');
+    }
+  }
+
+  static async getPageviewNavigationFlow(req: Request, res: Response): Promise<Response> {
+    try {
+      const { projectId } = req.params;
+      const { timeRange = '24h', limit = '20' } = req.query;
+
+      const data = await AnalyticsService.getPageviewNavigationFlow(projectId, {
+        timeRange: timeRange as string,
+        limit: parseInt(limit as string),
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Pageview navigation flow fetched successfully',
+        data,
+      } as ApiResponse);
+    } catch (error) {
+      return AnalyticsController.handleError(error as Error, res, 'Failed to fetch pageview navigation flow');
+    }
+  }
+
+  // ============================================================================
   // CROSS-DASHBOARD UTILITIES
   // ============================================================================
 

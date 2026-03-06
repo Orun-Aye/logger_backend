@@ -248,10 +248,85 @@ export class DashboardController {
   /**
    * Get dashboard overview (summary of all key metrics)
    * GET /api/dashboard/overview
+   *
+   * Query params:
+   *   includeComparison=true  — adds period-over-period comparison + sparklines
    */
   static async getOverview(req: Request, res: Response): Promise<Response> {
     try {
       const filters = DashboardController.buildFiltersFromRequest(req);
+      const includeComparison = req.query.includeComparison === "true";
+
+      // When comparison requested, use the richer method that runs both periods
+      if (includeComparison) {
+        const [comparisonResult, realTimeMetrics] = await Promise.all([
+          DashboardService.getDashboardMetricsWithComparison(filters),
+          DashboardService.getRealTimeMetrics(
+            filters.userId,
+            filters.specificProjectIds
+          ),
+        ]);
+
+        const metrics = comparisonResult.current;
+
+        const overview = {
+          summary: {
+            totalLogs: metrics.totalLogs,
+            totalProjects: metrics.totalProjects,
+            totalErrors: metrics.totalErrors,
+            totalWarnings: metrics.totalWarnings,
+            errorRate: metrics.averageErrorRate,
+            averageResponseTime: metrics.averageResponseTime,
+          },
+          realTime: {
+            currentRPS: realTimeMetrics.currentRPS,
+            currentErrorRate: realTimeMetrics.currentErrorRate,
+            activeUsers: realTimeMetrics.activeUsers,
+          },
+          health: {
+            healthyProjects: metrics.projectHealth.filter(
+              (p) => p.healthScore >= 80
+            ).length,
+            warningProjects: metrics.projectHealth.filter(
+              (p) => p.healthScore >= 60 && p.healthScore < 80
+            ).length,
+            criticalProjects: metrics.projectHealth.filter(
+              (p) => p.healthScore < 60
+            ).length,
+          },
+          topIssues: {
+            mostFrequentError: metrics.topErrors[0] || null,
+            slowestEndpoint: metrics.slowestEndpoints[0] || null,
+            recentCriticalErrors: realTimeMetrics.recentErrors
+              .filter((e) => e.severity === "fatal")
+              .slice(0, 3),
+          },
+          trends: {
+            logVolumeChange: comparisonResult.comparison.totalLogs.change,
+            errorRateChange: comparisonResult.comparison.errorRate.change,
+          },
+          comparison: comparisonResult.comparison,
+          sparklines: comparisonResult.sparklines,
+          logsOverTime: metrics.logsOverTime,
+          networkStats: metrics.networkStats,
+          pageLoadTimes: metrics.pageLoadTimes,
+          browserStats: metrics.browserStats,
+          topErrors: metrics.topErrors,
+          slowestEndpoints: metrics.slowestEndpoints,
+          errorsByType: metrics.errorsByType,
+          projectHealth: metrics.projectHealth,
+        };
+
+        return res.status(200).json({
+          status: "success",
+          message: "Dashboard overview fetched successfully",
+          data: overview,
+          filters,
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
+
+      // Legacy path (no comparison) — kept for backward compatibility
       const [metrics, realTimeMetrics] = await Promise.all([
         DashboardService.getDashboardMetrics(filters),
         DashboardService.getRealTimeMetrics(
@@ -265,6 +340,7 @@ export class DashboardController {
           totalLogs: metrics.totalLogs,
           totalProjects: metrics.totalProjects,
           totalErrors: metrics.totalErrors,
+          totalWarnings: metrics.totalWarnings,
           errorRate: metrics.averageErrorRate,
           averageResponseTime: metrics.averageResponseTime,
         },
@@ -292,15 +368,17 @@ export class DashboardController {
             .slice(0, 3),
         },
         trends: {
-          logVolumeChange: DashboardController.calculateTrendChange(
-            metrics.logsOverTime,
-            "total"
-          ),
-          errorRateChange: DashboardController.calculateTrendChange(
-            metrics.logsOverTime,
-            "errors"
-          ),
+          logVolumeChange: 0,
+          errorRateChange: 0,
         },
+        logsOverTime: metrics.logsOverTime,
+        networkStats: metrics.networkStats,
+        pageLoadTimes: metrics.pageLoadTimes,
+        browserStats: metrics.browserStats,
+        topErrors: metrics.topErrors,
+        slowestEndpoints: metrics.slowestEndpoints,
+        errorsByType: metrics.errorsByType,
+        projectHealth: metrics.projectHealth,
       };
 
       return res.status(200).json({
@@ -864,24 +942,6 @@ export class DashboardController {
     return csvRows.join("\n");
   }
 
-  private static calculateTrendChange(
-    timeSeriesData: any[],
-    field: string
-  ): number {
-    if (timeSeriesData.length < 2) return 0;
-
-    const recent =
-      timeSeriesData
-        .slice(-3)
-        .reduce((sum, item) => sum + (item[field] || 0), 0) / 3;
-    const previous =
-      timeSeriesData
-        .slice(0, 3)
-        .reduce((sum, item) => sum + (item[field] || 0), 0) / 3;
-
-    if (previous === 0) return 0;
-    return ((recent - previous) / previous) * 100;
-  }
 }
 
 // =============================================================================

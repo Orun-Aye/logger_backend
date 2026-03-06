@@ -610,9 +610,10 @@ export class AlertService {
     // Environment match
     if (condition.environment && log.environment !== condition.environment) return false;
 
-    // Response time threshold
-    if (condition.responseTimeThreshold && log.responseTime) {
-      if (log.responseTime < condition.responseTimeThreshold) return false;
+    // Response time threshold (use client-reported network duration)
+    if (condition.responseTimeThreshold) {
+      const clientDuration = (log.data as any)?.network?.duration;
+      if (clientDuration != null && clientDuration < condition.responseTimeThreshold) return false;
     }
 
     // Event type match

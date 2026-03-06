@@ -31,7 +31,6 @@ interface MatchStage {
   projectId: Types.ObjectId;
   timestamp: { $gte: Date; $lte: Date };
   severity?: string;
-  endpoint?: { $exists: boolean; $ne: null };
 }
 
 interface GroupStage {
@@ -216,7 +215,7 @@ export class DashboardInsightsService {
         $group: {
           _id: null,
           totalLogs: { $sum: 1 },
-          uniqueEndpoints: { $addToSet: "$endpoint" },
+          uniqueEndpoints: { $addToSet: "$data.network.url" },
           errorCount: {
             $sum: {
               $cond: [{ $in: ["$level", [LogLevel.ERROR, LogLevel.FATAL]] }, 1, 0],
@@ -384,14 +383,15 @@ export class DashboardInsightsService {
         $match: {
           projectId: new mongoose.Types.ObjectId(projectId),
           timestamp: { $gte: dateRange.from, $lte: dateRange.to },
-          endpoint: { $exists: true, $ne: null },
+          eventType: "network",
+          "data.network.url": { $exists: true, $ne: null },
         },
       },
       {
         $group: {
           _id: {
-            endpoint: "$endpoint",
-            method: "$method",
+            endpoint: "$data.network.url",
+            method: "$data.network.method",
           },
           totalCount: { $sum: 1 },
           errorCount: {
@@ -408,13 +408,11 @@ export class DashboardInsightsService {
               $cond: [
                 {
                   $and: [
-                    // Corrected: Check if $responseTime is not null
-                    { $ne: ["$responseTime", null] },
-                    // Corrected: Check BSON type for numbers (int, long, double, decimal)
-                    { $in: [ { $type: "$responseTime" }, ["int", "long", "double", "decimal"] ] },
+                    { $ne: ["$data.network.duration", null] },
+                    { $in: [ { $type: "$data.network.duration" }, ["int", "long", "double", "decimal"] ] },
                   ],
                 },
-                "$responseTime",
+                "$data.network.duration",
                 null,
               ],
             },
@@ -479,7 +477,7 @@ export class DashboardInsightsService {
           count: { $sum: 1 },
           firstSeen: { $min: "$timestamp" },
           lastSeen: { $max: "$timestamp" },
-          affectedEndpoints: { $addToSet: "$endpoint" },
+          affectedEndpoints: { $addToSet: "$data.network.url" },
         } as GroupStage,
       },
       { $sort: { count: -1 as -1 } },
@@ -554,7 +552,7 @@ export class DashboardInsightsService {
           $group: {
             _id: {
               message: "$message",
-              endpoint: "$endpoint",
+              url: "$url",
             },
             count: { $sum: 1 },
             latestTimestamp: { $max: "$timestamp" },
@@ -578,7 +576,7 @@ export class DashboardInsightsService {
         (error: any): RecentCriticalError => ({
           timestamp: error.latestTimestamp.toISOString(),
           message: error._id.message,
-          endpoint: error._id.endpoint,
+          endpoint: error._id.url,
           count: error.count,
         })
       ),

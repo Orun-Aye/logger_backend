@@ -35,6 +35,8 @@ import customDashboardRoutes from "./routes/customDashboard.routes";
 import funnelRoutes from "./routes/funnel.routes";
 import regressionRoutes from "./routes/regression.routes";
 import aiSuggestionRoutes from "./routes/aiSuggestion.routes";
+// Phase 3 routes
+import anomalyRoutes from "./routes/anomaly.routes";
 // Phase 2.5 routes
 import traceRoutes from "./routes/trace.routes";
 import webVitalsRoutes from "./routes/webVitals.routes";
@@ -508,6 +510,8 @@ app.use("/api/v1/custom-dashboards", restrictedCors, customDashboardRoutes);
 app.use("/api/v1/funnels", restrictedCors, funnelRoutes);
 app.use("/api/v1/regressions", restrictedCors, regressionRoutes);
 app.use("/api/v1/ai-suggestions", restrictedCors, aiSuggestionRoutes);
+// Phase 3 routes
+app.use("/api/v1/anomalies", restrictedCors, anomalyRoutes);
 // Phase 2.5 routes
 app.use("/api/v1", restrictedCors, traceRoutes);
 app.use("/api/v1", restrictedCors, webVitalsRoutes);
@@ -545,7 +549,7 @@ if (!isVercel) {
       logger.info("Query timeouts configured");
 
       // Initialize background jobs
-      initializeJobs({ retention: config.retention });
+      initializeJobs({ retention: config.retention, features: config.features });
       logger.info("Background jobs initialized");
 
       // Start server

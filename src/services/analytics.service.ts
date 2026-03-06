@@ -347,7 +347,6 @@ export class AnalyticsService {
             $lte: endDate.toISOString(),
           },
           eventType: "performance",
-          responseTime: { $exists: true, $type: "number" },
         },
       },
       {
@@ -376,8 +375,7 @@ export class AnalyticsService {
               ],
             },
           },
-          ttfb: { $avg: "$responseTime" },
-          cls: { $avg: "$data.performance.cls" },
+          ttfb: { $avg: "$data.performance.startTime" },
         },
       },
       { $sort: { _id: 1 } },
@@ -387,7 +385,6 @@ export class AnalyticsService {
           lcp: { $round: ["$lcp", 0] },
           fcp: { $round: ["$fcp", 0] },
           ttfb: { $round: ["$ttfb", 0] },
-          cls: { $round: ["$cls", 3] },
           _id: 0,
         },
       },
@@ -407,67 +404,55 @@ export class AnalyticsService {
             $gte: startDate.toISOString(),
             $lte: endDate.toISOString(),
           },
-          eventType: "performance",
+          eventType: "web-vital",
+          "data.vital.name": { $exists: true },
+          "data.vital.value": { $exists: true, $type: "number" },
         },
       },
       {
         $group: {
-          _id: null,
-          lcp: {
-            $push: {
-              $cond: [
-                { $eq: ["$data.performance.type", "navigation"] },
-                "$data.performance.duration",
-                null,
-              ],
-            },
-          },
-          fcp: {
-            $push: {
-              $cond: [
-                { $eq: ["$data.performance.type", "paint"] },
-                "$data.performance.duration",
-                null,
-              ],
-            },
-          },
-          cls: { $push: "$data.performance.cls" },
+          _id: "$data.vital.name",
+          values: { $push: "$data.vital.value" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $addFields: {
+          sortedValues: { $sortArray: { input: "$values", sortBy: 1 } },
         },
       },
       {
         $project: {
-          lcp: {
-            p75: {
-              $arrayElemAt: [
-                "$lcp",
-                { $floor: { $multiply: [{ $size: "$lcp" }, 0.75] } },
-              ],
-            },
-            avg: { $avg: "$lcp" },
+          name: "$_id",
+          avg: { $avg: "$sortedValues" },
+          p75: {
+            $arrayElemAt: [
+              "$sortedValues",
+              { $floor: { $multiply: [{ $size: "$sortedValues" }, 0.75] } },
+            ],
           },
-          fcp: {
-            p75: {
-              $arrayElemAt: [
-                "$fcp",
-                { $floor: { $multiply: [{ $size: "$fcp" }, 0.75] } },
-              ],
-            },
-            avg: { $avg: "$fcp" },
-          },
-          cls: {
-            p75: {
-              $arrayElemAt: [
-                "$cls",
-                { $floor: { $multiply: [{ $size: "$cls" }, 0.75] } },
-              ],
-            },
-            avg: { $avg: "$cls" },
-          },
+          count: 1,
+          _id: 0,
         },
       },
     ]);
 
-    return vitals[0] || { lcp: {}, fcp: {}, cls: {} };
+    // Transform array into keyed object { lcp: { avg, p75 }, fcp: { avg, p75 }, cls: { avg, p75 }, inp: { avg, p75 } }
+    const result: Record<string, { avg: number | null; p75: number | null }> = {
+      lcp: { avg: null, p75: null },
+      fcp: { avg: null, p75: null },
+      cls: { avg: null, p75: null },
+      inp: { avg: null, p75: null },
+    };
+
+    for (const v of vitals) {
+      const key = (v.name || "").toLowerCase();
+      if (key in result) {
+        result[key] = { avg: v.avg, p75: v.p75 };
+      }
+    }
+
+    return result;
   }
 
   static async getResourcePerformance(
@@ -486,14 +471,14 @@ export class AnalyticsService {
           },
           eventType: "network",
           "data.network.url": { $exists: true },
-          responseTime: { $exists: true, $type: "number" },
+          "data.network.duration": { $exists: true, $type: "number" },
         },
       },
       {
         $group: {
           _id: "$data.network.url",
           calls: { $sum: 1 },
-          responseTimes: { $push: "$responseTime" },
+          responseTimes: { $push: "$data.network.duration" },
           errors: {
             $sum: { $cond: [{ $gte: ["$data.network.status", 400] }, 1, 0] },
           },
@@ -583,7 +568,6 @@ export class AnalyticsService {
               ],
             },
           },
-          cls: { $avg: "$data.performance.cls" },
         },
       },
       {
@@ -605,7 +589,6 @@ export class AnalyticsService {
           },
           fcp: { $round: ["$fcp", 0] },
           lcp: { $round: ["$lcp", 0] },
-          cls: { $round: ["$cls", 3] },
           _id: 0,
         },
       },
@@ -622,14 +605,17 @@ export class AnalyticsService {
   ) {
     const { startDate, endDate } = this.parseTimeRange(options.timeRange);
 
-    const metrics = await LogModel.aggregate([
+    const timeFilter = {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString(),
+    };
+
+    // Query performance entries for load time
+    const perfMetrics = await LogModel.aggregate([
       {
         $match: {
           projectId,
-          timestamp: {
-            $gte: startDate.toISOString(),
-            $lte: endDate.toISOString(),
-          },
+          timestamp: timeFilter,
           eventType: "performance",
         },
       },
@@ -637,41 +623,51 @@ export class AnalyticsService {
         $group: {
           _id: null,
           avgLoadTime: { $avg: "$data.performance.duration" },
-          avgLCP: {
-            $avg: {
-              $cond: [
-                { $eq: ["$data.performance.type", "navigation"] },
-                "$data.performance.duration",
-                null,
-              ],
-            },
-          },
-          avgFCP: {
-            $avg: {
-              $cond: [
-                { $eq: ["$data.performance.type", "paint"] },
-                "$data.performance.duration",
-                null,
-              ],
-            },
-          },
-          avgCLS: { $avg: "$data.performance.cls" },
         },
       },
     ]);
 
-    if (!metrics[0]) {
+    // Query web-vital events for LCP, FCP, CLS
+    const vitalMetrics = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          timestamp: timeFilter,
+          eventType: "web-vital",
+          "data.vital.name": { $exists: true },
+          "data.vital.value": { $exists: true, $type: "number" },
+        },
+      },
+      {
+        $group: {
+          _id: "$data.vital.name",
+          avg: { $avg: "$data.vital.value" },
+        },
+      },
+    ]);
+
+    const avgLoadTime = perfMetrics[0]?.avgLoadTime ?? null;
+
+    // Build a map from vital name to average value
+    const vitalMap: Record<string, number> = {};
+    for (const v of vitalMetrics) {
+      if (v._id) vitalMap[v._id.toLowerCase()] = v.avg;
+    }
+
+    const avgLCP = vitalMap["lcp"] ?? null;
+    const avgFCP = vitalMap["fcp"] ?? null;
+    const avgCLS = vitalMap["cls"] ?? null;
+
+    if (avgLoadTime == null && avgLCP == null && avgFCP == null && avgCLS == null) {
       return { score: 0, grade: "N/A", breakdown: {} };
     }
 
-    const { avgLoadTime, avgLCP, avgFCP, avgCLS } = metrics[0];
-
     // Calculate score (0-100)
     const scores = {
-      loadTime: this.calculateMetricScore(avgLoadTime, 1000, 3000),
-      lcp: this.calculateMetricScore(avgLCP, 2500, 4000),
-      fcp: this.calculateMetricScore(avgFCP, 1800, 3000),
-      cls: this.calculateMetricScore(avgCLS, 0.1, 0.25),
+      loadTime: avgLoadTime != null ? this.calculateMetricScore(avgLoadTime, 1000, 3000) : 50,
+      lcp: avgLCP != null ? this.calculateMetricScore(avgLCP, 2500, 4000) : 50,
+      fcp: avgFCP != null ? this.calculateMetricScore(avgFCP, 1800, 3000) : 50,
+      cls: avgCLS != null ? this.calculateMetricScore(avgCLS, 0.1, 0.25) : 50,
     };
 
     const totalScore = Math.round(
@@ -694,10 +690,10 @@ export class AnalyticsService {
           ? "D"
           : "F",
       breakdown: {
-        loadTime: { score: scores.loadTime, value: Math.round(avgLoadTime) },
-        lcp: { score: scores.lcp, value: Math.round(avgLCP) },
-        fcp: { score: scores.fcp, value: Math.round(avgFCP) },
-        cls: { score: scores.cls, value: avgCLS?.toFixed(3) },
+        loadTime: { score: scores.loadTime, value: avgLoadTime != null ? Math.round(avgLoadTime) : null },
+        lcp: { score: scores.lcp, value: avgLCP != null ? Math.round(avgLCP) : null },
+        fcp: { score: scores.fcp, value: avgFCP != null ? Math.round(avgFCP) : null },
+        cls: { score: scores.cls, value: avgCLS != null ? avgCLS.toFixed(3) : null },
       },
     };
   }
@@ -717,14 +713,14 @@ export class AnalyticsService {
             $lte: endDate.toISOString(),
           },
           eventType: "network",
-          responseTime: { $exists: true, $type: "number" },
+          "data.network.duration": { $exists: true, $type: "number" },
         },
       },
       {
         $group: {
           _id: "$data.network.url",
-          avgDuration: { $avg: "$responseTime" },
-          maxDuration: { $max: "$responseTime" },
+          avgDuration: { $avg: "$data.network.duration" },
+          maxDuration: { $max: "$data.network.duration" },
           calls: { $sum: 1 },
           method: { $first: "$data.network.method" },
         },
@@ -1090,7 +1086,7 @@ export class AnalyticsService {
           },
           avgResponseTime: {
             $avg: {
-              $cond: [{ $and: [{ $ne: ["$responseTime", null] }, { $isNumber: "$responseTime" }] }, "$responseTime", null],
+              $cond: [{ $and: [{ $ne: ["$data.network.duration", null] }, { $isNumber: "$data.network.duration" }] }, "$data.network.duration", null],
             },
           },
           lastActivity: { $max: "$createdAt" },
@@ -1119,6 +1115,1082 @@ export class AnalyticsService {
 
     const results = await LogModel.aggregate(pipeline);
     return results;
+  }
+
+  // ============================================================================
+  // NETWORK ANALYTICS
+  // ============================================================================
+
+  static async getNetworkOverview(
+    projectId: string,
+    options: { timeRange: string }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const previousPeriod = this.getPreviousPeriod(startDate, endDate);
+    const timeFilter = {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString(),
+    };
+    const prevTimeFilter = {
+      $gte: previousPeriod.start.toISOString(),
+      $lte: previousPeriod.end.toISOString(),
+    };
+
+    const baseMatch = { projectId, eventType: "network" };
+
+    const [currentStats, previousStats, statusDistribution] = await Promise.all([
+      LogModel.aggregate([
+        {
+          $match: { ...baseMatch, timestamp: timeFilter },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRequests: { $sum: 1 },
+            failedRequests: {
+              $sum: { $cond: [{ $gte: ["$data.network.status", 400] }, 1, 0] },
+            },
+            durations: { $push: "$data.network.duration" },
+          },
+        },
+        {
+          $addFields: {
+            validDurations: {
+              $filter: {
+                input: "$durations",
+                cond: { $and: [{ $ne: ["$$this", null] }, { $isNumber: "$$this" }] },
+              },
+            },
+          },
+        },
+        {
+          $addFields: {
+            sortedDurations: { $sortArray: { input: "$validDurations", sortBy: 1 } },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalRequests: 1,
+            failedRequests: 1,
+            avgDuration: { $round: [{ $avg: "$validDurations" }, 0] },
+            p95Duration: {
+              $round: [
+                {
+                  $arrayElemAt: [
+                    "$sortedDurations",
+                    { $floor: { $multiply: [{ $size: "$sortedDurations" }, 0.95] } },
+                  ],
+                },
+                0,
+              ],
+            },
+          },
+        },
+      ]),
+      LogModel.aggregate([
+        {
+          $match: { ...baseMatch, timestamp: prevTimeFilter },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRequests: { $sum: 1 },
+            failedRequests: {
+              $sum: { $cond: [{ $gte: ["$data.network.status", 400] }, 1, 0] },
+            },
+          },
+        },
+      ]),
+      LogModel.aggregate([
+        {
+          $match: { ...baseMatch, timestamp: timeFilter, "data.network.status": { $exists: true } },
+        },
+        {
+          $group: {
+            _id: "$data.network.status",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+        {
+          $project: {
+            status: "$_id",
+            count: 1,
+            _id: 0,
+          },
+        },
+      ]),
+    ]);
+
+    const current = currentStats[0] || { totalRequests: 0, failedRequests: 0, avgDuration: 0, p95Duration: 0 };
+    const previous = previousStats[0] || { totalRequests: 0, failedRequests: 0 };
+    const failureRate = current.totalRequests > 0
+      ? parseFloat(((current.failedRequests / current.totalRequests) * 100).toFixed(2))
+      : 0;
+    const prevFailureRate = previous.totalRequests > 0
+      ? parseFloat(((previous.failedRequests / previous.totalRequests) * 100).toFixed(2))
+      : 0;
+
+    return {
+      totalRequests: current.totalRequests,
+      failedRequests: current.failedRequests,
+      failureRate,
+      avgDuration: current.avgDuration,
+      p95Duration: current.p95Duration,
+      statusDistribution,
+      changes: {
+        totalRequests: this.calculateChange(current.totalRequests, previous.totalRequests),
+        failedRequests: this.calculateChange(current.failedRequests, previous.failedRequests),
+        failureRate: this.calculateChange(failureRate, prevFailureRate),
+      },
+    };
+  }
+
+  static async getNetworkRequests(
+    projectId: string,
+    options: {
+      timeRange: string;
+      page: number;
+      limit: number;
+      status?: string;
+      method?: string;
+      search?: string;
+    }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const match: any = {
+      projectId,
+      eventType: "network",
+      timestamp: {
+        $gte: startDate.toISOString(),
+        $lte: endDate.toISOString(),
+      },
+    };
+
+    if (options.status) {
+      const statusCode = parseInt(options.status);
+      if (!isNaN(statusCode)) {
+        // Filter by status range (e.g. 2xx, 4xx, 5xx)
+        const rangeStart = Math.floor(statusCode / 100) * 100;
+        match["data.network.status"] = { $gte: rangeStart, $lt: rangeStart + 100 };
+      }
+    }
+
+    if (options.method) {
+      match["data.network.method"] = options.method.toUpperCase();
+    }
+
+    if (options.search) {
+      match["data.network.url"] = { $regex: options.search, $options: "i" };
+    }
+
+    const skip = (options.page - 1) * options.limit;
+
+    const [requests, total] = await Promise.all([
+      LogModel.find(match)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(options.limit)
+        .select("data.network timestamp")
+        .lean(),
+      LogModel.countDocuments(match),
+    ]);
+
+    return {
+      requests: requests.map((r: any) => ({
+        url: r.data?.network?.url,
+        method: r.data?.network?.method,
+        status: r.data?.network?.status,
+        duration: r.data?.network?.duration,
+        timestamp: r.timestamp,
+      })),
+      pagination: {
+        current: options.page,
+        total: Math.ceil(total / options.limit),
+        count: requests.length,
+        totalRecords: total,
+      },
+    };
+  }
+
+  static async getNetworkTimeline(
+    projectId: string,
+    options: { timeRange: string; granularity: "hour" | "day" }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const dateFormat =
+      options.granularity === "hour" ? "%Y-%m-%dT%H:00:00Z" : "%Y-%m-%d";
+
+    const timeline = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "network",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: dateFormat,
+              date: { $toDate: "$timestamp" },
+            },
+          },
+          totalRequests: { $sum: 1 },
+          failedRequests: {
+            $sum: { $cond: [{ $gte: ["$data.network.status", 400] }, 1, 0] },
+          },
+          avgDuration: { $avg: "$data.network.duration" },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          time: "$_id",
+          totalRequests: 1,
+          failedRequests: 1,
+          avgDuration: { $round: [{ $ifNull: ["$avgDuration", 0] }, 0] },
+          _id: 0,
+        },
+      },
+    ]);
+
+    return timeline;
+  }
+
+  static async getNetworkTopEndpoints(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const endpoints = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "network",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+          "data.network.url": { $exists: true },
+        },
+      },
+      {
+        $group: {
+          _id: { url: "$data.network.url", method: "$data.network.method" },
+          count: { $sum: 1 },
+          avgDuration: { $avg: "$data.network.duration" },
+          errors: {
+            $sum: { $cond: [{ $gte: ["$data.network.status", 400] }, 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          url: "$_id.url",
+          method: "$_id.method",
+          count: 1,
+          avgDuration: { $round: [{ $ifNull: ["$avgDuration", 0] }, 0] },
+          errorRate: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ["$count", 0] },
+                  { $multiply: [{ $divide: ["$errors", "$count"] }, 100] },
+                  0,
+                ],
+              },
+              2,
+            ],
+          },
+          _id: 0,
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return endpoints;
+  }
+
+  static async getNetworkSlowest(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const endpoints = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "network",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+          "data.network.duration": { $exists: true, $type: "number" },
+        },
+      },
+      {
+        $group: {
+          _id: { url: "$data.network.url", method: "$data.network.method" },
+          durations: { $push: "$data.network.duration" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $addFields: {
+          sortedDurations: { $sortArray: { input: "$durations", sortBy: 1 } },
+        },
+      },
+      {
+        $project: {
+          url: "$_id.url",
+          method: "$_id.method",
+          avgDuration: { $round: [{ $avg: "$durations" }, 0] },
+          maxDuration: { $round: [{ $max: "$durations" }, 0] },
+          p95Duration: {
+            $round: [
+              {
+                $arrayElemAt: [
+                  "$sortedDurations",
+                  { $floor: { $multiply: [{ $size: "$sortedDurations" }, 0.95] } },
+                ],
+              },
+              0,
+            ],
+          },
+          count: 1,
+          _id: 0,
+        },
+      },
+      { $sort: { avgDuration: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return endpoints;
+  }
+
+  // ============================================================================
+  // INTERACTION ANALYTICS
+  // ============================================================================
+
+  static async getInteractionOverview(
+    projectId: string,
+    options: { timeRange: string }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const previousPeriod = this.getPreviousPeriod(startDate, endDate);
+    const timeFilter = {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString(),
+    };
+    const prevTimeFilter = {
+      $gte: previousPeriod.start.toISOString(),
+      $lte: previousPeriod.end.toISOString(),
+    };
+    const baseMatch = { projectId, eventType: "interaction" };
+
+    const [currentStats, previousStats] = await Promise.all([
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: timeFilter } },
+        {
+          $group: {
+            _id: "$data.interaction.type",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: prevTimeFilter } },
+        {
+          $group: {
+            _id: "$data.interaction.type",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const currentMap: Record<string, number> = {};
+    let currentTotal = 0;
+    for (const s of currentStats) {
+      currentMap[s._id || "unknown"] = s.count;
+      currentTotal += s.count;
+    }
+
+    const previousMap: Record<string, number> = {};
+    let previousTotal = 0;
+    for (const s of previousStats) {
+      previousMap[s._id || "unknown"] = s.count;
+      previousTotal += s.count;
+    }
+
+    return {
+      total: currentTotal,
+      clicks: currentMap["click"] || 0,
+      scrolls: currentMap["scroll"] || 0,
+      keypresses: currentMap["keypress"] || 0,
+      focuses: currentMap["focus"] || 0,
+      blurs: currentMap["blur"] || 0,
+      changes: {
+        total: this.calculateChange(currentTotal, previousTotal),
+        clicks: this.calculateChange(currentMap["click"] || 0, previousMap["click"] || 0),
+        scrolls: this.calculateChange(currentMap["scroll"] || 0, previousMap["scroll"] || 0),
+        keypresses: this.calculateChange(currentMap["keypress"] || 0, previousMap["keypress"] || 0),
+      },
+    };
+  }
+
+  static async getInteractionTimeline(
+    projectId: string,
+    options: { timeRange: string; granularity: "hour" | "day" }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const dateFormat =
+      options.granularity === "hour" ? "%Y-%m-%dT%H:00:00Z" : "%Y-%m-%d";
+
+    const timeline = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "interaction",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            time: {
+              $dateToString: {
+                format: dateFormat,
+                date: { $toDate: "$timestamp" },
+              },
+            },
+            type: "$data.interaction.type",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.time",
+          clicks: {
+            $sum: { $cond: [{ $eq: ["$_id.type", "click"] }, "$count", 0] },
+          },
+          scrolls: {
+            $sum: { $cond: [{ $eq: ["$_id.type", "scroll"] }, "$count", 0] },
+          },
+          keypresses: {
+            $sum: { $cond: [{ $eq: ["$_id.type", "keypress"] }, "$count", 0] },
+          },
+          total: { $sum: "$count" },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          time: "$_id",
+          clicks: 1,
+          scrolls: 1,
+          keypresses: 1,
+          total: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    return timeline;
+  }
+
+  static async getInteractionTopElements(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const elements = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "interaction",
+          "data.interaction.type": "click",
+          "data.interaction.target": { $exists: true, $ne: null },
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$data.interaction.target",
+          count: { $sum: 1 },
+          lastSeen: { $max: "$timestamp" },
+        },
+      },
+      {
+        $project: {
+          target: "$_id",
+          count: 1,
+          lastSeen: 1,
+          _id: 0,
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return elements;
+  }
+
+  static async getInteractionMostClicked(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const elements = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "interaction",
+          "data.interaction.target": { $exists: true, $ne: null },
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            target: "$data.interaction.target",
+            type: "$data.interaction.type",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          target: "$_id.target",
+          type: "$_id.type",
+          count: 1,
+          _id: 0,
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return elements;
+  }
+
+  // ============================================================================
+  // CONSOLE ANALYTICS
+  // ============================================================================
+
+  static async getConsoleOverview(
+    projectId: string,
+    options: { timeRange: string }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const previousPeriod = this.getPreviousPeriod(startDate, endDate);
+    const timeFilter = {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString(),
+    };
+    const prevTimeFilter = {
+      $gte: previousPeriod.start.toISOString(),
+      $lte: previousPeriod.end.toISOString(),
+    };
+    const baseMatch = { projectId, eventType: "console" };
+
+    const [currentStats, previousStats] = await Promise.all([
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: timeFilter } },
+        {
+          $group: {
+            _id: "$level",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: prevTimeFilter } },
+        {
+          $group: {
+            _id: "$level",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const currentMap: Record<string, number> = {};
+    let currentTotal = 0;
+    for (const s of currentStats) {
+      currentMap[s._id || "unknown"] = s.count;
+      currentTotal += s.count;
+    }
+
+    const previousMap: Record<string, number> = {};
+    let previousTotal = 0;
+    for (const s of previousStats) {
+      previousMap[s._id || "unknown"] = s.count;
+      previousTotal += s.count;
+    }
+
+    return {
+      total: currentTotal,
+      byLevel: {
+        error: currentMap["error"] || 0,
+        warn: currentMap["warn"] || 0,
+        info: currentMap["info"] || 0,
+        log: currentMap["log"] || 0,
+        debug: currentMap["debug"] || 0,
+      },
+      changes: {
+        total: this.calculateChange(currentTotal, previousTotal),
+        error: this.calculateChange(currentMap["error"] || 0, previousMap["error"] || 0),
+        warn: this.calculateChange(currentMap["warn"] || 0, previousMap["warn"] || 0),
+      },
+    };
+  }
+
+  static async getConsoleMessages(
+    projectId: string,
+    options: {
+      timeRange: string;
+      page: number;
+      limit: number;
+      level?: string;
+      search?: string;
+    }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const match: any = {
+      projectId,
+      eventType: "console",
+      timestamp: {
+        $gte: startDate.toISOString(),
+        $lte: endDate.toISOString(),
+      },
+    };
+
+    if (options.level) {
+      match.level = options.level;
+    }
+
+    if (options.search) {
+      match.message = { $regex: options.search, $options: "i" };
+    }
+
+    const skip = (options.page - 1) * options.limit;
+
+    const [logs, total] = await Promise.all([
+      LogModel.find(match)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(options.limit)
+        .select("level data.consoleArgs timestamp url message")
+        .lean(),
+      LogModel.countDocuments(match),
+    ]);
+
+    return {
+      messages: logs.map((l: any) => ({
+        level: l.level,
+        message: Array.isArray(l.data?.consoleArgs)
+          ? l.data.consoleArgs.join(" ")
+          : l.message || "",
+        timestamp: l.timestamp,
+        url: l.url,
+      })),
+      pagination: {
+        current: options.page,
+        total: Math.ceil(total / options.limit),
+        count: logs.length,
+        totalRecords: total,
+      },
+    };
+  }
+
+  static async getConsoleTimeline(
+    projectId: string,
+    options: { timeRange: string; granularity: "hour" | "day" }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const dateFormat =
+      options.granularity === "hour" ? "%Y-%m-%dT%H:00:00Z" : "%Y-%m-%d";
+
+    const timeline = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "console",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            time: {
+              $dateToString: {
+                format: dateFormat,
+                date: { $toDate: "$timestamp" },
+              },
+            },
+            level: "$level",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.time",
+          errors: {
+            $sum: { $cond: [{ $eq: ["$_id.level", "error"] }, "$count", 0] },
+          },
+          warnings: {
+            $sum: { $cond: [{ $eq: ["$_id.level", "warn"] }, "$count", 0] },
+          },
+          info: {
+            $sum: { $cond: [{ $eq: ["$_id.level", "info"] }, "$count", 0] },
+          },
+          log: {
+            $sum: { $cond: [{ $eq: ["$_id.level", "log"] }, "$count", 0] },
+          },
+          total: { $sum: "$count" },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          time: "$_id",
+          errors: 1,
+          warnings: 1,
+          info: 1,
+          log: 1,
+          total: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    return timeline;
+  }
+
+  // ============================================================================
+  // PAGEVIEW ANALYTICS
+  // ============================================================================
+
+  static async getPageviewOverview(
+    projectId: string,
+    options: { timeRange: string }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const previousPeriod = this.getPreviousPeriod(startDate, endDate);
+    const timeFilter = {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString(),
+    };
+    const prevTimeFilter = {
+      $gte: previousPeriod.start.toISOString(),
+      $lte: previousPeriod.end.toISOString(),
+    };
+    const baseMatch = { projectId, eventType: "pageview" };
+
+    const [currentStats, previousStats] = await Promise.all([
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: timeFilter } },
+        {
+          $group: {
+            _id: null,
+            totalPageviews: { $sum: 1 },
+            uniquePages: { $addToSet: { $ifNull: ["$data.url", "$url"] } },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalPageviews: 1,
+            uniquePages: { $size: "$uniquePages" },
+          },
+        },
+      ]),
+      LogModel.aggregate([
+        { $match: { ...baseMatch, timestamp: prevTimeFilter } },
+        {
+          $group: {
+            _id: null,
+            totalPageviews: { $sum: 1 },
+            uniquePages: { $addToSet: { $ifNull: ["$data.url", "$url"] } },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalPageviews: 1,
+            uniquePages: { $size: "$uniquePages" },
+          },
+        },
+      ]),
+    ]);
+
+    // Get top page
+    const topPageResult = await LogModel.aggregate([
+      { $match: { ...baseMatch, timestamp: timeFilter } },
+      {
+        $group: {
+          _id: { $ifNull: ["$data.url", "$url"] },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 1 },
+      {
+        $project: {
+          url: "$_id",
+          count: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    const current = currentStats[0] || { totalPageviews: 0, uniquePages: 0 };
+    const previous = previousStats[0] || { totalPageviews: 0, uniquePages: 0 };
+
+    return {
+      totalPageviews: current.totalPageviews,
+      uniquePages: current.uniquePages,
+      topPage: topPageResult[0] || null,
+      changes: {
+        totalPageviews: this.calculateChange(current.totalPageviews, previous.totalPageviews),
+        uniquePages: this.calculateChange(current.uniquePages, previous.uniquePages),
+      },
+    };
+  }
+
+  static async getPageviewTimeline(
+    projectId: string,
+    options: { timeRange: string; granularity: "hour" | "day" }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const dateFormat =
+      options.granularity === "hour" ? "%Y-%m-%dT%H:00:00Z" : "%Y-%m-%d";
+
+    const timeline = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "pageview",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: dateFormat,
+              date: { $toDate: "$timestamp" },
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          time: "$_id",
+          count: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    return timeline;
+  }
+
+  static async getPageviewTopPages(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const pages = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "pageview",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$data.url", "$url"] },
+          title: { $first: "$data.title" },
+          views: { $sum: 1 },
+          uniqueSessions: { $addToSet: "$context.sessionId" },
+        },
+      },
+      {
+        $project: {
+          url: "$_id",
+          title: 1,
+          views: 1,
+          uniqueSessions: {
+            $size: {
+              $filter: {
+                input: "$uniqueSessions",
+                cond: { $ne: ["$$this", null] },
+              },
+            },
+          },
+          _id: 0,
+        },
+      },
+      { $sort: { views: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return pages;
+  }
+
+  static async getPageviewReferrers(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const referrers = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "pageview",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+          $or: [
+            { "data.referrer": { $exists: true, $ne: "" } },
+            { referrer: { $exists: true, $ne: "" } },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$data.referrer", "$referrer"] },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    // Calculate percentages
+    const totalReferrals = referrers.reduce((sum: number, r: any) => sum + r.count, 0);
+
+    return referrers.map((r: any) => ({
+      referrer: r._id,
+      count: r.count,
+      percentage: totalReferrals > 0
+        ? parseFloat(((r.count / totalReferrals) * 100).toFixed(2))
+        : 0,
+    }));
+  }
+
+  static async getPageviewNavigationFlow(
+    projectId: string,
+    options: { timeRange: string; limit: number }
+  ) {
+    const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+
+    const flows = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          eventType: "pageview",
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+          "context.sessionId": { $exists: true },
+        },
+      },
+      { $sort: { "context.sessionId": 1, timestamp: 1 } },
+      {
+        $group: {
+          _id: "$context.sessionId",
+          pages: {
+            $push: { $ifNull: ["$data.url", "$url"] },
+          },
+        },
+      },
+      {
+        $addFields: {
+          pairs: {
+            $reduce: {
+              input: { $range: [0, { $subtract: [{ $size: "$pages" }, 1] }] },
+              initialValue: [],
+              in: {
+                $concatArrays: [
+                  "$$value",
+                  [
+                    {
+                      from: { $arrayElemAt: ["$pages", "$$this"] },
+                      to: {
+                        $arrayElemAt: [
+                          "$pages",
+                          { $add: ["$$this", 1] },
+                        ],
+                      },
+                    },
+                  ],
+                ],
+              },
+            },
+          },
+        },
+      },
+      { $unwind: "$pairs" },
+      {
+        $group: {
+          _id: { from: "$pairs.from", to: "$pairs.to" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          from: "$_id.from",
+          to: "$_id.to",
+          count: 1,
+          _id: 0,
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: options.limit },
+    ]);
+
+    return flows;
   }
 
   // ============================================================================
@@ -1193,6 +2265,18 @@ export class AnalyticsService {
     startDate: Date;
     endDate: Date;
   } {
+    // Handle custom range format: "custom:ISO_START,ISO_END"
+    if (timeRange.startsWith("custom:")) {
+      const parts = timeRange.slice(7).split(",");
+      if (parts.length === 2) {
+        const s = new Date(parts[0]);
+        const e = new Date(parts[1]);
+        if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+          return { startDate: s, endDate: e };
+        }
+      }
+    }
+
     const endDate = new Date();
     let startDate = new Date();
 

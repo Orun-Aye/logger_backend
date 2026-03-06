@@ -1,8 +1,29 @@
 import { Document, Schema, Types, model } from "mongoose";
 
+// Predefined metric data sources for widgets
+export const WIDGET_METRICS = [
+  // General
+  "log-volume", "error-count", "error-rate", "warning-count",
+  "avg-response-time", "active-alerts", "health-score",
+  // Performance
+  "perf-fcp", "perf-lcp", "perf-cls", "perf-inp", "perf-ttfb",
+  // Network
+  "network-requests", "network-failure-rate", "network-avg-duration",
+  "network-p95-duration", "network-errors",
+  // Interactions
+  "interaction-total", "interaction-clicks", "interaction-scrolls",
+  "interaction-keypresses",
+  // Console
+  "console-total", "console-errors", "console-warnings", "console-error-rate",
+  // Pageviews
+  "pageview-total", "pageview-unique-pages", "pageview-bounce-rate",
+] as const;
+
+export type WidgetMetric = (typeof WIDGET_METRICS)[number];
+
 export interface IDashboardWidget {
   id: string;
-  type: "chart" | "counter" | "table" | "heatmap" | "log-stream" | "alert-list";
+  type: "chart" | "counter" | "table" | "heatmap" | "log-stream" | "alert-list" | "gauge" | "sparkline";
   title: string;
   config: {
     metric?: string;
@@ -11,6 +32,7 @@ export interface IDashboardWidget {
     filters?: Record<string, any>;
     chartType?: "line" | "bar" | "pie" | "area";
     refreshInterval?: number;
+    eventType?: "error" | "performance" | "web-vital" | "network" | "interaction" | "console" | "pageview";
   };
   layout: {
     x: number;
@@ -38,7 +60,7 @@ const DashboardWidgetSchema = new Schema(
     type: {
       type: String,
       required: true,
-      enum: ["chart", "counter", "table", "heatmap", "log-stream", "alert-list"],
+      enum: ["chart", "counter", "table", "heatmap", "log-stream", "alert-list", "gauge", "sparkline"],
     },
     title: { type: String, required: true },
     config: {
@@ -48,6 +70,10 @@ const DashboardWidgetSchema = new Schema(
       filters: Schema.Types.Mixed,
       chartType: { type: String, enum: ["line", "bar", "pie", "area"] },
       refreshInterval: Number,
+      eventType: {
+        type: String,
+        enum: ["error", "performance", "web-vital", "network", "interaction", "console", "pageview"],
+      },
     },
     layout: {
       x: { type: Number, required: true, default: 0 },
