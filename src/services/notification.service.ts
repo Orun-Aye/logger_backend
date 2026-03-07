@@ -1,7 +1,9 @@
 import { Types } from "mongoose";
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import Notification from "../models/notification.model";
 import { globalServices } from "../server";
+import { config } from "../config";
 
 interface EmailOptions {
   to: string[];
@@ -63,7 +65,7 @@ interface NotificationResult {
 
 interface NotificationConfig {
   email?: {
-    provider?: 'sendgrid' | 'ses' | 'smtp' | 'console';
+    provider?: 'resend' | 'sendgrid' | 'ses' | 'smtp' | 'console';
     apiKey?: string;
     fromEmail?: string;
     fromName?: string;
@@ -112,9 +114,10 @@ export class NotificationService {
 
   private static config: NotificationConfig = {
     email: {
-      provider: process.env.EMAIL_PROVIDER as any || 'smtp',
-      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@yourapp.com',
-      fromName: process.env.FROM_NAME || 'Alert System',
+      provider: (process.env.EMAIL_PROVIDER as NotificationConfig['email']['provider'])
+        || (config.email.resendApiKey ? 'resend' : 'smtp'),
+      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@monita.dev',
+      fromName: process.env.FROM_NAME || 'Monita',
     },
     webhook: {
       defaultTimeout: 10000,
@@ -165,6 +168,8 @@ export class NotificationService {
       const provider = this.config.email?.provider || 'smtp';
 
       switch (provider) {
+        case 'resend':
+          return await this.sendEmailViaResend(emailOptions);
         case 'sendgrid':
           return await this.sendEmailViaSendGrid(emailOptions);
         case 'ses':
@@ -619,6 +624,55 @@ export class NotificationService {
   }
 
   // Email provider implementations
+  private static async sendEmailViaResend(options: EmailOptions): Promise<NotificationResult> {
+    const startTime = Date.now();
+    try {
+      const apiKey = config.email.resendApiKey;
+      if (!apiKey) {
+        console.warn('[Resend] No API key configured, falling back to console');
+        console.log(`[Email] To: ${options.to.join(', ')}, Subject: ${options.subject}`);
+        return { success: true, channel: 'email', duration: Date.now() - startTime };
+      }
+
+      const resend = new Resend(apiKey);
+      const fromAddress = this.config.email?.fromEmail || 'Monita <notifications@monita.dev>';
+
+      const { data, error } = await resend.emails.send({
+        from: fromAddress,
+        to: Array.isArray(options.to) ? options.to : [options.to],
+        subject: options.subject,
+        html: options.html || options.text || '',
+        ...(options.cc?.length ? { cc: options.cc } : {}),
+        ...(options.bcc?.length ? { bcc: options.bcc } : {}),
+      });
+
+      if (error) {
+        console.error('[Resend] Email send error:', error);
+        return {
+          success: false,
+          channel: 'email',
+          error: error.message,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      console.log(`[Resend] Email sent successfully: ${data?.id}`);
+      return {
+        success: true,
+        channel: 'email',
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      console.error('[Resend] Email failed:', error);
+      return {
+        success: false,
+        channel: 'email',
+        error: (error as Error).message,
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
   private static async sendEmailViaSendGrid(options: EmailOptions): Promise<NotificationResult> {
     // Implementation would use @sendgrid/mail
     console.log('[SendGrid] Not implemented, falling back to console');

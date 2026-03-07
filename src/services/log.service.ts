@@ -1019,10 +1019,12 @@ export class LogService {
               "service",
               "environment",
               "eventType",
-              "errorName",
-              "errorMessage",
               "url",
               "userAgent",
+              "responseTime",
+              "error.name",
+              "error.message",
+              "error.stack",
               "correlationId",
               "sessionId",
               "traceId",
@@ -1033,11 +1035,16 @@ export class LogService {
             headerWritten = true;
           }
 
-          // Escape CSV values
-          const escape = (val: any) => {
+          // Escape CSV values: handles commas, quotes, newlines, and carriage returns
+          const escape = (val: any): string => {
             if (val === undefined || val === null) return "";
             const str = String(val);
-            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+            if (
+              str.includes(",") ||
+              str.includes('"') ||
+              str.includes("\n") ||
+              str.includes("\r")
+            ) {
               return `"${str.replace(/"/g, '""')}"`;
             }
             return str;
@@ -1050,10 +1057,12 @@ export class LogService {
             escape(doc.service),
             escape(doc.environment),
             escape(doc.eventType),
-            escape(doc.error?.name),
-            escape(doc.error?.message),
             escape(doc.url),
             escape(doc.userAgent),
+            escape(doc.responseTime),
+            escape(doc.error?.name),
+            escape(doc.error?.message),
+            escape(doc.error?.stack),
             escape(doc.correlationId),
             escape(doc.sessionId),
             escape(doc.traceId),

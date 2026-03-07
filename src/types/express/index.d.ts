@@ -1,4 +1,5 @@
 import * as express from "express";
+import { ApiTokenScope } from "../../models/apiToken.model";
 
 
 // to make the file a module and avoid the TypeScript error
@@ -11,6 +12,7 @@ declare global {
       userId?: string;
       project?: any;
       sampled?: boolean;
+      tokenScopes?: ApiTokenScope[];
     }
   }
 }

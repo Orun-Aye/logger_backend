@@ -2377,22 +2377,45 @@ export class AnalyticsService {
   }
 
   private static convertToCSV(data: any): string {
-    // Simple CSV conversion - can be enhanced
     const rows: string[] = [];
 
-    // Add headers
-    rows.push("Metric,Value");
-
-    // Add data rows
-    Object.keys(data).forEach((key) => {
-      if (typeof data[key] === "object") {
-        Object.keys(data[key]).forEach((subKey) => {
-          rows.push(`${key}.${subKey},${data[key][subKey]}`);
-        });
-      } else {
-        rows.push(`${key},${data[key]}`);
+    // Escape CSV values: handles commas, quotes, newlines
+    const escape = (val: any): string => {
+      if (val === undefined || val === null) return "";
+      const str = String(val);
+      if (
+        str.includes(",") ||
+        str.includes('"') ||
+        str.includes("\n") ||
+        str.includes("\r")
+      ) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
-    });
+      return str;
+    };
+
+    // Flatten nested objects with dot notation
+    const flatten = (obj: any, prefix = ""): Record<string, any> => {
+      const result: Record<string, any> = {};
+      for (const key of Object.keys(obj)) {
+        const fullKey = prefix ? `${prefix}.${key}` : key;
+        const value = obj[key];
+        if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+          Object.assign(result, flatten(value, fullKey));
+        } else if (Array.isArray(value)) {
+          result[fullKey] = JSON.stringify(value);
+        } else {
+          result[fullKey] = value;
+        }
+      }
+      return result;
+    };
+
+    const flat = flatten(data);
+    rows.push("Metric,Value");
+    for (const [key, value] of Object.entries(flat)) {
+      rows.push(`${escape(key)},${escape(value)}`);
+    }
 
     return rows.join("\n");
   }

@@ -865,16 +865,19 @@ export class AnalyticsController {
         ...filters,
       });
 
-      const filename = `analytics-${projectId}-${Date.now()}.${format}`;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `monita-analytics-${projectId}-${timestamp}.${format}`;
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');
 
-      return res.status(200).json({
-        status: 'success',
-        message: 'Analytics exported successfully',
-        data,
-        meta: { filename },
-      } as ApiResponse);
+      if (format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv');
+        // Send raw CSV string directly, not wrapped in JSON
+        return res.status(200).send(data);
+      } else {
+        res.setHeader('Content-Type', 'application/json');
+        // Send raw JSON data directly, not wrapped in { status, data }
+        return res.status(200).send(JSON.stringify(data));
+      }
     } catch (error) {
       return AnalyticsController.handleError(error as Error, res, 'Failed to export analytics');
     }

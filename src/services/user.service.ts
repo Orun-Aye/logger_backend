@@ -125,11 +125,24 @@ export class UserService {
       if (!secret) {
         throw new Error("JWT secret is not defined in environment variables");
       }
+
+      // If MFA is enabled, return a short-lived MFA token instead of full JWT
+      if (user.mfaEnabled) {
+        const mfaToken = jwt.sign(
+          { userId: user._id, mfaRequired: true },
+          secret,
+          { expiresIn: "5m" }
+        );
+        return {
+          requiresMfa: true,
+          mfaToken,
+        };
+      }
+
       const token = jwt.sign({ userId: user._id }, secret, {
         expiresIn: "10h",
       });
 
-      // Here you would typically check the password, but for simplicity, we assume password is not used
       return {
         _id: user._id,
         email: user.email,

@@ -153,7 +153,7 @@ export const config = {
   },
 
   /**
-   * Email configuration (SMTP)
+   * Email configuration (SMTP + Resend)
    */
   email: {
     enabled: getEnvAsBoolean("EMAIL_ENABLED", false),
@@ -163,6 +163,7 @@ export const config = {
     user: process.env.SMTP_USER || "",
     password: process.env.SMTP_PASSWORD || "",
     from: process.env.SMTP_FROM || "noreply@monita.dev",
+    resendApiKey: process.env.RESEND_API_KEY || "",
   },
 
   /**

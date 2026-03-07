@@ -6,7 +6,9 @@
     "build": "tsc --build",
     "start": "node ./dist/server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096 -r ts-node/register\" ./src/server.ts",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch --runInBand",
+    "test:coverage": "jest --coverage --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -14,8 +16,11 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@types/archiver": "^7.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^7.0.4",
+    "@types/qrcode": "^1.5.6",
+    "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
@@ -31,13 +36,21 @@
     "node-cache": "^5.1.2",
     "nodemailer": "^7.0.11",
     "openai": "^5.10.2",
+    "otplib": "^13.3.0",
+    "qrcode": "^1.5.4",
     "redis": "^5.6.1",
+    "resend": "^6.9.3",
     "socket.io": "^4.8.1",
     "source-map": "^0.7.6",
     "uuid": "^11.1.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.25.76"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "7.0.0"
+    }
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -46,6 +59,8 @@
     "@types/jest": "^30.0.0",
     "@types/mongoose": "^5.11.96",
     "@types/node": "^24.1.0",
+    "@types/supertest": "^7.2.0",
+    "mongodb-memory-server": "^11.0.1",
     "nanoid": "^5.1.5",
     "nodemon": "^3.1.10",
     "supertest": "^7.0.0",

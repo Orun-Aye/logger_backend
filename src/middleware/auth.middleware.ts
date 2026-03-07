@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { ProjectModel } from "../models/project.model";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { ApiTokenService } from "../services/apiToken.service";
 
 dotenv.config();
 
@@ -28,6 +29,30 @@ export async function verifyToken(
     ? authHeader.slice(7)
     : authHeader;
 
+  // If the token starts with "mt_", validate as a personal API token
+  if (token.startsWith("mt_")) {
+    try {
+      const apiToken = await ApiTokenService.validateToken(token);
+      if (!apiToken) {
+        return res.status(401).json({
+          status: "error",
+          code: "INVALID_TOKEN",
+          message: "Invalid, expired, or revoked API token",
+        });
+      }
+      req.userId = apiToken.userId.toString();
+      req.tokenScopes = apiToken.scopes;
+      return next();
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        code: "SERVER_ERROR",
+        message: "Failed to validate API token",
+      });
+    }
+  }
+
+  // Otherwise, validate as a JWT
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     return res.status(500).json({

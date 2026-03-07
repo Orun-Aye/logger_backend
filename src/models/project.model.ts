@@ -13,7 +13,11 @@ export interface IProject extends Document {
   isActive: boolean;
   logCount?: number;
   alertRuleCount?: number;
-  integrationSettings?: any;
+  integrationSettings?: {
+    slack?: { webhookUrl?: string };
+    email?: { recipients?: string[] };
+    webhook?: { url?: string; headers?: Record<string, string> };
+  };
   rateLimitConfig?: {
     maxRequestsPerMinute: number;
     burstLimit: number
@@ -30,6 +34,7 @@ export interface IProject extends Document {
     value: number;
     alwaysKeepLevels: string[];
   };
+  organizationId?: Types.ObjectId;
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -50,7 +55,14 @@ const ProjectSchema: Schema<IProject> = new Schema(
     isActive: { type: Boolean, default: true },
     logCount: { type: Number, default: 0 },
     alertRuleCount: { type: Number, default: 0 },
-    integrationSettings: { type: Schema.Types.Mixed, default: {} },
+    integrationSettings: {
+      slack: { webhookUrl: { type: String, default: "" } },
+      email: { recipients: { type: [String], default: [] } },
+      webhook: {
+        url: { type: String, default: "" },
+        headers: { type: Schema.Types.Mixed, default: {} },
+      },
+    },
     rateLimitConfig: {
       maxRequestsPerMinute: { type: Number, default: 100 },
       burstLimit: { type: Number, default: 10 }
@@ -67,10 +79,14 @@ const ProjectSchema: Schema<IProject> = new Schema(
       value: { type: Number, default: 100, min: 1, max: 1000 },
       alwaysKeepLevels: { type: [String], default: ["error", "fatal"] },
     },
+    organizationId: { type: Schema.Types.ObjectId, ref: "Organization" },
   },
   {
     timestamps: true,
   }
 );
+
+// Index for organization-scoped queries (sparse because field is optional)
+ProjectSchema.index({ organizationId: 1 }, { sparse: true });
 
 export const ProjectModel = model<IProject>("Project", ProjectSchema);

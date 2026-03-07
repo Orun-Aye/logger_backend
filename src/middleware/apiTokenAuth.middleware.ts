@@ -1,0 +1,102 @@
+import { NextFunction, Request, Response } from "express";
+import { ApiTokenService } from "../services/apiToken.service";
+import { ApiTokenScope } from "../models/apiToken.model";
+
+/**
+ * Middleware that checks for personal API tokens (mt_ prefix).
+ *
+ * If the Authorization header contains a Bearer token starting with "mt_",
+ * this middleware validates it and sets req.userId and req.tokenScopes.
+ *
+ * If the token does not start with "mt_", it calls next() so that the
+ * standard JWT verifyToken middleware can handle it.
+ */
+export async function authenticateApiToken(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    // No auth header — let the next middleware handle it
+    next();
+    return;
+  }
+
+  const rawToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : authHeader;
+
+  // Only handle tokens with the mt_ prefix
+  if (!rawToken.startsWith("mt_")) {
+    // Not a personal API token — pass through to JWT auth
+    next();
+    return;
+  }
+
+  try {
+    const token = await ApiTokenService.validateToken(rawToken);
+
+    if (!token) {
+      res.status(401).json({
+        status: "error",
+        code: "INVALID_TOKEN",
+        message: "Invalid, expired, or revoked API token",
+      });
+      return;
+    }
+
+    // Set user context from the token
+    req.userId = token.userId.toString();
+    req.tokenScopes = token.scopes;
+
+    next();
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      code: "SERVER_ERROR",
+      message: "Failed to validate API token",
+    });
+  }
+}
+
+/**
+ * Scope-checking middleware factory.
+ * Use after authenticateApiToken or verifyToken to ensure the request
+ * has the required scope(s).
+ *
+ * JWT-authenticated requests (no tokenScopes) are always allowed —
+ * scopes only apply to personal API tokens.
+ */
+export function requireScope(...requiredScopes: ApiTokenScope[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // If no tokenScopes, this is a JWT-authenticated request — allow
+    if (!req.tokenScopes) {
+      next();
+      return;
+    }
+
+    // Admin scope grants access to everything
+    if (req.tokenScopes.includes("admin")) {
+      next();
+      return;
+    }
+
+    // Check if the token has at least one of the required scopes
+    const hasScope = requiredScopes.some((scope) =>
+      req.tokenScopes!.includes(scope)
+    );
+
+    if (!hasScope) {
+      res.status(403).json({
+        status: "error",
+        code: "INSUFFICIENT_SCOPE",
+        message: `This action requires one of the following scopes: ${requiredScopes.join(", ")}`,
+      });
+      return;
+    }
+
+    next();
+  };
+}

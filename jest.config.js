@@ -11,12 +11,20 @@ module.exports = {
     ...tsJestTransformCfg,
   },
   moduleFileExtensions: ["ts", "js", "json"],
-  setupFiles: ["dotenv/config"],
+  setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
   collectCoverageFrom: [
     "src/**/*.{ts,js}",
     "!src/**/index.ts",
     "!src/types/**",
     "!src/**/*.d.ts",
+    "!src/__tests__/**",
   ],
   coverageDirectory: "coverage",
+  coverageReporters: ["text", "text-summary", "lcov"],
+  testTimeout: 30000,
+  verbose: true,
+  // Handle ESM packages that Jest can't parse
+  transformIgnorePatterns: [
+    "node_modules/(?!(@scure|otplib|@otplib)/)",
+  ],
 };

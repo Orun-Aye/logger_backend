@@ -41,11 +41,26 @@ import anomalyRoutes from "./routes/anomaly.routes";
 import traceRoutes from "./routes/trace.routes";
 import webVitalsRoutes from "./routes/webVitals.routes";
 import sourceMapRoutes from "./routes/sourceMap.routes";
+// Personal API tokens
+import apiTokenRoutes from "./routes/apiToken.routes";
+// Organization & Team management routes
+import organizationRoutes from "./routes/organization.routes";
+// Integration testing routes
+import integrationRoutes from "./routes/integration.routes";
+// Third-party integrations management routes
+import integrationsRoutes from "./routes/integrations.routes";
+// Admin dashboard routes
+import adminRoutes from "./routes/admin.routes";
+// Billing & Subscription routes
+import billingRoutes from "./routes/billing.routes";
+// Public pages (status, changelog — no auth)
+import publicRoutes from "./routes/public.routes";
 
 // Services
 import { DashboardWebSocketService } from "./services/websocket.service";
 import { initializeRedis } from "./utils/db";
 import { initializeJobs } from "./jobs";
+import { ChangelogService } from "./services/changelog.service";
 
 // Initialize configuration (validates environment variables)
 initializeConfig();
@@ -491,6 +506,9 @@ Authorization: Bearer YOUR_JWT_TOKEN
 // Health check routes (no authentication required)
 app.use("/api/v1", healthRoutes);
 
+// Public pages (status, changelog — open CORS, no auth)
+app.use("/api/v1/public", logIngestionCors, publicRoutes);
+
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, userRoutes);
 app.use("/api/v1/projects", restrictedCors, projectRoutes, sdkConfigRoutes, savedSearchRoutes);
@@ -516,6 +534,18 @@ app.use("/api/v1/anomalies", restrictedCors, anomalyRoutes);
 app.use("/api/v1", restrictedCors, traceRoutes);
 app.use("/api/v1", restrictedCors, webVitalsRoutes);
 app.use("/api/v1", logIngestionCors, sourceMapRoutes);
+// Personal API tokens
+app.use("/api/v1/tokens", restrictedCors, apiTokenRoutes);
+// Organization & Team management routes
+app.use("/api/v1/organizations", restrictedCors, organizationRoutes);
+// Integration testing routes
+app.use("/api/v1/integrations", restrictedCors, integrationRoutes);
+// Third-party integrations management
+app.use("/api/v1/integrations/manage", restrictedCors, integrationsRoutes);
+// Admin dashboard routes
+app.use("/api/v1/admin", restrictedCors, adminRoutes);
+// Billing & Subscription routes
+app.use("/api/v1/billing", restrictedCors, billingRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
@@ -540,6 +570,9 @@ if (!isVercel) {
       // Connect to database
       await connectDatabase();
       logger.info("Database connected successfully");
+
+      // Seed changelog entries if empty
+      await ChangelogService.seedIfEmpty();
 
       // Initialize Redis
       await initializeRedis();
@@ -570,11 +603,13 @@ if (!isVercel) {
   startServer();
 } else {
   // In Vercel, just connect to DB without starting server
-  connectDatabase().catch((err) => {
-    logger.error("Failed to connect to database", {
-      error: err instanceof Error ? err.message : "Unknown error",
+  connectDatabase()
+    .then(() => ChangelogService.seedIfEmpty())
+    .catch((err) => {
+      logger.error("Failed to connect to database", {
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
     });
-  });
 }
 
 

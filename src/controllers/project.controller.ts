@@ -1137,13 +1137,16 @@ export class ProjectController {
   /**
    * Updates integration settings for a project
    * PUT /api/projects/:projectId/integration-settings
-   * 
-   * Body: { integrationSettings: Record<string, any> }
+   *
+   * Body: { slack?: {...}, email?: {...}, webhook?: {...} }
+   * Also accepts: { integrationSettings: { slack?, email?, webhook? } } for backwards compat
    */
   static async updateIntegrationSettings(req: Request, res: Response): Promise<Response> {
     try {
       const { projectId } = req.params;
-      const { integrationSettings } = req.body;
+
+      // Accept both { integrationSettings: {...} } and { slack, email, webhook } directly
+      const integrationSettings = req.body.integrationSettings || req.body;
 
       if (!integrationSettings || typeof integrationSettings !== 'object') {
         return res.status(400).json({

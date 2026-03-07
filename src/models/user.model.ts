@@ -17,6 +17,11 @@ export interface IUser extends Document {
 
     resetPasswordToken?: string;
     resetPasswordExpires?: Date;
+
+    // MFA fields
+    mfaEnabled: boolean;
+    mfaSecret?: string;
+    mfaBackupCodes: string[];
 }
 
 const UserSchema: Schema<IUser> = new Schema({
@@ -38,6 +43,11 @@ const UserSchema: Schema<IUser> = new Schema({
 
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+
+    // MFA fields
+    mfaEnabled: { type: Boolean, default: false },
+    mfaSecret: { type: String },
+    mfaBackupCodes: [{ type: String }],
 }, {
     timestamps: true,
 })
