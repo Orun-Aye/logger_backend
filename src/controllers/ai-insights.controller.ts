@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { AIInsightsService } from "../services/ai-insights.service";
 import { askQuestionSchema, enrichedInsightsQuerySchema } from "../validators/ai-insights.validator";
-import { config } from "../config";
 
 export class AIInsightsController {
   /**

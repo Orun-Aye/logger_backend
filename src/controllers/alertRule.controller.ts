@@ -8,8 +8,6 @@ import { AlertService } from "../services/alert.service";
 import { CreateAlertRuleDTO } from "../dtos/alertRule.dto";
 import {
   SnoozeAlertRuleDTO,
-  AlertAnalyticsQueryDTO,
-  AlertTimelineQueryDTO,
 } from "../dtos/alert.dto";
 
 export class AlertRuleController {

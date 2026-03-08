@@ -7,7 +7,6 @@ import {
 } from "../services/project.service";
 import { CreateProjectDTO, UpdateProjectDTO } from "../dtos/project.dto";
 import { ProjectModel } from "../models/project.model";
-import { Types } from "mongoose";
 
 /**
  * Response interface for consistent API responses

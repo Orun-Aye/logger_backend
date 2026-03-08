@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { UserService, UserValidationError, UserNotFoundError } from "../services/user.service";
+import { UserService, UserValidationError } from "../services/user.service";
 import { CreateUserDTO } from "../dtos/user.dto";
 import { forgotPasswordSchema, resetPasswordSchema } from "../validators/user.validator";
 
