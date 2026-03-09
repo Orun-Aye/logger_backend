@@ -116,8 +116,8 @@ export class NotificationService {
     email: {
       provider: (process.env.EMAIL_PROVIDER as NotificationConfig['email']['provider'])
         || (config.email.resendApiKey ? 'resend' : 'smtp'),
-      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@monita.dev',
-      fromName: process.env.FROM_NAME || 'Monita',
+      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@apperio.dev',
+      fromName: process.env.FROM_NAME || 'Apperio',
     },
     webhook: {
       defaultTimeout: 10000,
@@ -635,7 +635,7 @@ export class NotificationService {
       }
 
       const resend = new Resend(apiKey);
-      const fromAddress = this.config.email?.fromEmail || 'Monita <notifications@monita.dev>';
+      const fromAddress = this.config.email?.fromEmail || 'Apperio <notifications@apperio.dev>';
 
       const { data, error } = await resend.emails.send({
         from: fromAddress,
@@ -691,7 +691,7 @@ export class NotificationService {
     const startTime = Date.now();
     try {
       const info = await this.transporter.sendMail({
-        from: `"${this.config.email?.fromName || 'LogHive'}" <${this.config.email?.fromEmail || process.env.SMTP_FROM || 'no-reply@loghive.com'}>`,
+        from: `"${this.config.email?.fromName || 'Apperio'}" <${this.config.email?.fromEmail || process.env.SMTP_FROM || 'no-reply@apperio.dev'}>`,
         to: options.to.join(", "),
         cc: options.cc?.join(", "),
         bcc: options.bcc?.join(", "),

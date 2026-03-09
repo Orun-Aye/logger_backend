@@ -8,7 +8,7 @@ export class PagerDutyIntegration extends BaseIntegration {
   readonly type = "pagerduty";
   readonly displayName = "PagerDuty";
   readonly description =
-    "Trigger and resolve PagerDuty incidents automatically from Monita alerts for on-call management.";
+    "Trigger and resolve PagerDuty incidents automatically from Apperio alerts for on-call management.";
   readonly category = "incident_management" as const;
   readonly requiredFields = ["accessToken"];
   readonly optionalFields = ["serviceId"];
@@ -38,7 +38,7 @@ export class PagerDutyIntegration extends BaseIntegration {
 
     try {
       // Send a trigger event and then immediately resolve it
-      const dedupKey = `monita-test-${Date.now()}`;
+      const dedupKey = `apperio-test-${Date.now()}`;
 
       // Trigger test event
       const triggerResponse = await this.fetchWithTimeout(this.eventsApiUrl, {
@@ -49,9 +49,9 @@ export class PagerDutyIntegration extends BaseIntegration {
           event_action: "trigger",
           dedup_key: dedupKey,
           payload: {
-            summary: "Monita integration test - this will auto-resolve",
+            summary: "Apperio integration test - this will auto-resolve",
             severity: "info",
-            source: "monita",
+            source: "apperio",
             component: "integration-test",
           },
         }),
@@ -128,7 +128,7 @@ export class PagerDutyIntegration extends BaseIntegration {
         payload: {
           summary,
           severity: severity || "error",
-          source: source || "monita",
+          source: source || "apperio",
           custom_details: details || {},
         },
       };

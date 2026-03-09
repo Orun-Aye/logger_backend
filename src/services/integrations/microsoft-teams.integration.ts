@@ -34,9 +34,9 @@ export class MicrosoftTeamsIntegration extends BaseIntegration {
     try {
       // Send a test adaptive card
       const card = this.buildAdaptiveCard({
-        title: "Monita Integration Test",
+        title: "Apperio Integration Test",
         description:
-          "This is a test message from Monita. Your Microsoft Teams integration is working correctly.",
+          "This is a test message from Apperio. Your Microsoft Teams integration is working correctly.",
         level: "info",
         facts: [
           { title: "Status", value: "Connected" },
@@ -98,7 +98,7 @@ export class MicrosoftTeamsIntegration extends BaseIntegration {
     }
 
     const card = this.buildAdaptiveCard({
-      title: title || "Monita Alert",
+      title: title || "Apperio Alert",
       description: description || "",
       level: level || "info",
       project,
@@ -188,7 +188,7 @@ export class MicrosoftTeamsIntegration extends BaseIntegration {
 
     body.push({
       type: "TextBlock",
-      text: `Sent by Monita at ${new Date().toISOString()}`,
+      text: `Sent by Apperio at ${new Date().toISOString()}`,
       isSubtle: true,
       size: "small",
       spacing: "medium",

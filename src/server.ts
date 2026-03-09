@@ -105,7 +105,7 @@ app.get("/", (req, res) => {
       <head>
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-        <title>LogHive Backend API</title>
+        <title>Apperio Backend API</title>
         <style>
           * {
             margin: 0;
@@ -300,15 +300,15 @@ app.get("/", (req, res) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🚀 LogHive Backend API</h1>
+            <h1>🚀 Apperio Backend API</h1>
             <p>AI-Enhanced Log Management & Alerting Platform</p>
             <div class="status-badge">🟢 Online & Ready</div>
           </div>
 
           <div class="content">
             <div class="section">
-              <h2>📋 About LogHive</h2>
-              <p>LogHive is a comprehensive backend operations management platform designed for modern development teams. It provides intelligent log ingestion, real-time alerting, AI-powered insights, and seamless integration with the Monita SDK.</p>
+              <h2>📋 About Apperio</h2>
+              <p>Apperio is a comprehensive backend operations management platform designed for modern development teams. It provides intelligent log ingestion, real-time alerting, AI-powered insights, and seamless integration with the Apperio SDK.</p>
 
               <div class="features">
                 <div class="feature">
@@ -459,7 +459,7 @@ app.get("/", (req, res) => {
 
             <div class="section">
               <h2>📝 Quick Start Example</h2>
-              <p>Here's how to send a log entry to LogHive:</p>
+              <p>Here's how to send a log entry to Apperio:</p>
               <div class="code">
 POST /api/v1/your-project-id/
 Content-Type: application/json
@@ -494,7 +494,7 @@ Authorization: Bearer YOUR_JWT_TOKEN
           </div>
 
           <div class="footer">
-            <p>LogHive Backend API v1.0.0 | Built with ❤️ for modern development teams</p>
+            <p>Apperio Backend API v1.0.0 | Built with ❤️ for modern development teams</p>
             <p>For more information, visit our <a href="https://github.com/Stanwukong/logger_backend" style="color: #3498db;">GitHub Repository</a></p>
           </div>
         </div>

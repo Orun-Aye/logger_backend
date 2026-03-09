@@ -111,7 +111,7 @@ export class AIService {
         model: config.anthropic.model,
         max_tokens: 2048,
         system:
-          "You are Monita, an observability platform assistant. " +
+          "You are Apperio, an observability platform assistant. " +
           "Generate a concise, actionable health summary from the statistical data provided. " +
           "Highlight the most important findings first. Use plain language, avoid jargon. " +
           "If there are concerning trends, call them out specifically. " +
@@ -149,7 +149,7 @@ export class AIService {
         model: config.anthropic.model,
         max_tokens: 512,
         system:
-          "You are Monita, an observability platform assistant. " +
+          "You are Apperio, an observability platform assistant. " +
           "Answer the user's question about their application based on the provided data context. " +
           "Be concise and specific. If you cannot determine the answer from the data, say so. " +
           "Suggest what additional data or filters might help answer the question.",
@@ -185,7 +185,7 @@ export class AIService {
         model: config.anthropic.model,
         max_tokens: 1024,
         system:
-          "You are Monita, an observability platform assistant specializing in performance optimization. " +
+          "You are Apperio, an observability platform assistant specializing in performance optimization. " +
           "Based on the performance data, suggest concrete optimizations. " +
           "Return a JSON array of objects with keys: title (short), description (1-2 sentences), priority (high/medium/low). " +
           "Limit to the top 5 most impactful suggestions. Return ONLY the JSON array, no other text.",
@@ -234,7 +234,7 @@ export class AIService {
         model: config.anthropic.model,
         max_tokens: 512,
         system:
-          "You are Monita, an observability platform assistant. " +
+          "You are Apperio, an observability platform assistant. " +
           "Explain in plain language why this anomaly likely occurred and what the team should investigate. " +
           "Be specific and actionable. Keep your response under 150 words.",
         messages: [

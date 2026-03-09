@@ -8,7 +8,7 @@ export class JiraIntegration extends BaseIntegration {
   readonly type = "jira";
   readonly displayName = "Jira";
   readonly description =
-    "Create Jira tickets automatically from Monita alerts and errors for seamless issue tracking.";
+    "Create Jira tickets automatically from Apperio alerts and errors for seamless issue tracking.";
   readonly category = "issue_tracking" as const;
   readonly requiredFields = ["accessToken", "baseUrl", "email", "project"];
   readonly optionalFields: string[] = [];

@@ -8,7 +8,7 @@ export class GitHubIntegration extends BaseIntegration {
   readonly type = "github";
   readonly displayName = "GitHub";
   readonly description =
-    "Create issues and track bugs directly in your GitHub repositories from Monita alerts.";
+    "Create issues and track bugs directly in your GitHub repositories from Apperio alerts.";
   readonly category = "issue_tracking" as const;
   readonly requiredFields = ["accessToken", "repo"];
   readonly optionalFields: string[] = [];

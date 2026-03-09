@@ -2,7 +2,7 @@
 
 ## ✅ Completed: March 2, 2026
 
-This document summarizes the infrastructure improvements implemented in Phase 1.3 of the Monita backend development.
+This document summarizes the infrastructure improvements implemented in Phase 1.3 of the Apperio backend development.
 
 ---
 
@@ -206,7 +206,7 @@ app.use('/api/v1', healthRoutes);
       "database": {
         "status": "healthy",
         "latency": 15,
-        "details": { "name": "monita", "host": "localhost", "port": 27017 }
+        "details": { "name": "apperio", "host": "localhost", "port": 27017 }
       },
       "redis": {
         "status": "healthy",
@@ -283,7 +283,7 @@ const token = generateToken({ userId: '123', email: 'user@example.com' });
 ### Required Environment Variables
 ```env
 # Required
-MONGODB_URI=mongodb://localhost:27017/monita
+MONGODB_URI=mongodb://localhost:27017/apperio
 JWT_SECRET=your-secret-key-here
 PORT=5000
 

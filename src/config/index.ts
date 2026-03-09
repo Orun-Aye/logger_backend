@@ -162,7 +162,7 @@ export const config = {
     secure: getEnvAsBoolean("SMTP_SECURE", false),
     user: process.env.SMTP_USER || "",
     password: process.env.SMTP_PASSWORD || "",
-    from: process.env.SMTP_FROM || "noreply@monita.dev",
+    from: process.env.SMTP_FROM || "noreply@apperio.dev",
     resendApiKey: process.env.RESEND_API_KEY || "",
   },
 

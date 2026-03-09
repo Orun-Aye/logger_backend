@@ -137,7 +137,7 @@ export class GdprService {
 
     return {
       archive,
-      filename: `monita-data-export-${userId}-${Date.now()}.zip`,
+      filename: `apperio-data-export-${userId}-${Date.now()}.zip`,
     };
   }
 

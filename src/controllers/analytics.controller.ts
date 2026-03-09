@@ -866,7 +866,7 @@ export class AnalyticsController {
       });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `monita-analytics-${projectId}-${timestamp}.${format}`;
+      const filename = `apperio-analytics-${projectId}-${timestamp}.${format}`;
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
       if (format === 'csv') {

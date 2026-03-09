@@ -40,7 +40,7 @@ const MONGODB_URI =
 
 const DAYS_BACK = 30;
 const NOW = Date.now();
-const PROJECT_NAME = `Monita Demo — ${new Date().toISOString().slice(0, 10)}`;
+const PROJECT_NAME = `Apperio Demo — ${new Date().toISOString().slice(0, 10)}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -116,22 +116,22 @@ const BROWSERS = [
 const RELEASES = ["v1.0.0", "v1.1.0", "v1.2.0", "v1.2.1", "v1.2.2"];
 
 const PAGES = [
-  { url: "https://app.monita.dev/dashboard", title: "Dashboard — Monita" },
-  { url: "https://app.monita.dev/projects", title: "Projects — Monita" },
-  { url: "https://app.monita.dev/settings", title: "Settings — Monita" },
-  { url: "https://app.monita.dev/alerts", title: "Alerts — Monita" },
-  { url: "https://app.monita.dev/logs", title: "Log Explorer — Monita" },
-  { url: "https://app.monita.dev/login", title: "Login — Monita" },
-  { url: "https://app.monita.dev/signup", title: "Sign Up — Monita" },
-  { url: "https://app.monita.dev/projects/abc123", title: "My App — Monita" },
-  { url: "https://app.monita.dev/projects/abc123/errors", title: "Errors — My App" },
-  { url: "https://app.monita.dev/pricing", title: "Pricing — Monita" },
+  { url: "https://app.apperio.dev/dashboard", title: "Dashboard — Apperio" },
+  { url: "https://app.apperio.dev/projects", title: "Projects — Apperio" },
+  { url: "https://app.apperio.dev/settings", title: "Settings — Apperio" },
+  { url: "https://app.apperio.dev/alerts", title: "Alerts — Apperio" },
+  { url: "https://app.apperio.dev/logs", title: "Log Explorer — Apperio" },
+  { url: "https://app.apperio.dev/login", title: "Login — Apperio" },
+  { url: "https://app.apperio.dev/signup", title: "Sign Up — Apperio" },
+  { url: "https://app.apperio.dev/projects/abc123", title: "My App — Apperio" },
+  { url: "https://app.apperio.dev/projects/abc123/errors", title: "Errors — My App" },
+  { url: "https://app.apperio.dev/pricing", title: "Pricing — Apperio" },
 ];
 const REFERRERS = [
-  "https://google.com/search?q=monita+logging",
+  "https://google.com/search?q=apperio+logging",
   "https://github.com/Stanwukong/remote-logger",
-  "https://twitter.com/monita_dev",
-  "https://dev.to/monita",
+  "https://twitter.com/apperio_dev",
+  "https://dev.to/apperio",
   "",
   "",
 ];
@@ -148,8 +148,8 @@ const API_ENDPOINTS = [
   { url: "/api/v1/alert-rules", method: "POST" },
   { url: "/api/v1/projects/abc123/logs/summary", method: "GET" },
   { url: "/api/v1/insights/abc123", method: "GET" },
-  { url: "https://cdn.monita.dev/assets/app.js", method: "GET" },
-  { url: "https://cdn.monita.dev/assets/styles.css", method: "GET" },
+  { url: "https://cdn.apperio.dev/assets/app.js", method: "GET" },
+  { url: "https://cdn.apperio.dev/assets/styles.css", method: "GET" },
   { url: "https://fonts.googleapis.com/css2?family=DM+Sans", method: "GET" },
 ];
 const ERROR_MESSAGES = [
@@ -162,7 +162,7 @@ const ERROR_MESSAGES = [
   { name: "Error", message: "Request failed with status code 500" },
   { name: "TypeError", message: "Cannot read properties of null (reading 'length')" },
   { name: "Error", message: "CORS policy: No 'Access-Control-Allow-Origin' header" },
-  { name: "ChunkLoadError", message: "Loading chunk 12 failed (error: https://app.monita.dev/chunk-12.js)" },
+  { name: "ChunkLoadError", message: "Loading chunk 12 failed (error: https://app.apperio.dev/chunk-12.js)" },
 ];
 const CLICK_TARGETS = [
   "button.btn-primary", "a.nav-link", "div.card-header", "button#submit-form",
@@ -180,7 +180,7 @@ const CONSOLE_MESSAGES: Array<{ level: "info" | "warn" | "error" | "debug"; args
   { level: "error", args: ["[Uncaught] Uncaught promise rejection: NetworkError"] },
   { level: "warn", args: ["[Cache] Evicting 47 stale entries from query cache"] },
   { level: "debug", args: ["[Store] State update: selectedTimeRange -> '24h'"] },
-  { level: "info", args: ["[SDK] Monita initialized, version 1.2.2"] },
+  { level: "info", args: ["[SDK] Apperio initialized, version 1.2.2"] },
   { level: "error", args: ["[MongoDB] Query timeout after 30000ms on logs collection"] },
   { level: "warn", args: ["[Rate Limit] 85/100 requests used in current window"] },
 ];
@@ -188,9 +188,9 @@ const PERFORMANCE_ENTRIES = [
   { name: "navigation", type: "navigation", duration: () => randomBetween(800, 3500), size: 0 },
   { name: "first-paint", type: "paint", duration: () => randomBetween(200, 1500), size: 0 },
   { name: "first-contentful-paint", type: "paint", duration: () => randomBetween(400, 2500), size: 0 },
-  { name: "https://cdn.monita.dev/app.js", type: "resource", duration: () => randomBetween(50, 800), size: () => randomInt(50000, 350000) },
-  { name: "https://cdn.monita.dev/vendor.js", type: "resource", duration: () => randomBetween(80, 1200), size: () => randomInt(100000, 500000) },
-  { name: "https://cdn.monita.dev/styles.css", type: "resource", duration: () => randomBetween(30, 400), size: () => randomInt(10000, 80000) },
+  { name: "https://cdn.apperio.dev/app.js", type: "resource", duration: () => randomBetween(50, 800), size: () => randomInt(50000, 350000) },
+  { name: "https://cdn.apperio.dev/vendor.js", type: "resource", duration: () => randomBetween(80, 1200), size: () => randomInt(100000, 500000) },
+  { name: "https://cdn.apperio.dev/styles.css", type: "resource", duration: () => randomBetween(30, 400), size: () => randomInt(10000, 80000) },
   { name: "https://fonts.gstatic.com/s/dmsans/v1/font.woff2", type: "resource", duration: () => randomBetween(40, 300), size: () => randomInt(20000, 60000) },
 ];
 const WEB_VITALS: Array<{ name: string; value: () => number; ratingFn: (v: number) => string }> = [
@@ -480,7 +480,7 @@ function makeAlertRules(
       isActive: true,
       notifyChannels: ["email", "slack"],
       notificationConfig: {
-        email: "dev-team@monita.dev",
+        email: "dev-team@apperio.dev",
         slackWebhook: "https://hooks.slack.com/services/T00000/B00000/xxx",
         slackChannel: "#alerts-critical",
       },
@@ -494,8 +494,8 @@ function makeAlertRules(
       isActive: true,
       notifyChannels: ["email", "slack", "webhook"],
       notificationConfig: {
-        email: "oncall@monita.dev",
-        webhookUrl: "https://pagerduty.com/webhook/monita",
+        email: "oncall@apperio.dev",
+        webhookUrl: "https://pagerduty.com/webhook/apperio",
       },
       escalationPolicyId,
       createdBy: userId,
@@ -506,7 +506,7 @@ function makeAlertRules(
       condition: { responseTimeThreshold: 3000, intervalMinutes: 5, service: "api-gateway" },
       isActive: true,
       notifyChannels: ["email"],
-      notificationConfig: { email: "perf@monita.dev" },
+      notificationConfig: { email: "perf@apperio.dev" },
       createdBy: userId,
     },
     {
@@ -516,8 +516,8 @@ function makeAlertRules(
       isActive: true,
       notifyChannels: ["email", "webhook"],
       notificationConfig: {
-        email: "billing@monita.dev",
-        webhookUrl: "https://api.opsgenie.com/v1/json/monita",
+        email: "billing@apperio.dev",
+        webhookUrl: "https://api.opsgenie.com/v1/json/apperio",
       },
       escalationPolicyId,
       createdBy: userId,
@@ -545,7 +545,7 @@ function makeAlertRules(
       condition: { level: "error", eventType: "network", keyword: "500", frequency: 10, intervalMinutes: 5 },
       isActive: true,
       notifyChannels: ["email", "slack"],
-      notificationConfig: { email: "infra@monita.dev" },
+      notificationConfig: { email: "infra@apperio.dev" },
       createdBy: userId,
     },
     {
@@ -554,7 +554,7 @@ function makeAlertRules(
       condition: { level: "error", eventType: "console", frequency: 50, intervalMinutes: 15 },
       isActive: true,
       notifyChannels: ["email"],
-      notificationConfig: { email: "dev@monita.dev" },
+      notificationConfig: { email: "dev@apperio.dev" },
       snoozeUntil: new Date(NOW + 7 * 86_400_000), // snoozed for 7 more days
       createdBy: userId,
     },
@@ -655,18 +655,18 @@ function makeEscalationPolicies(
         {
           level: 1, delayMinutes: 0,
           notifyChannels: ["email"],
-          recipients: ["oncall@monita.dev", "dev-lead@monita.dev"],
+          recipients: ["oncall@apperio.dev", "dev-lead@apperio.dev"],
         },
         {
           level: 2, delayMinutes: 15,
           notifyChannels: ["email", "slack"],
-          recipients: ["team-lead@monita.dev", "oncall@monita.dev"],
+          recipients: ["team-lead@apperio.dev", "oncall@apperio.dev"],
         },
         {
           level: 3, delayMinutes: 30,
           notifyChannels: ["email", "slack", "webhook"],
-          recipients: ["eng-manager@monita.dev", "cto@monita.dev"],
-          webhookUrl: "https://events.pagerduty.com/integration/monita/enqueue",
+          recipients: ["eng-manager@apperio.dev", "cto@apperio.dev"],
+          webhookUrl: "https://events.pagerduty.com/integration/apperio/enqueue",
         },
       ],
       isActive: true,
@@ -680,12 +680,12 @@ function makeEscalationPolicies(
         {
           level: 1, delayMinutes: 0,
           notifyChannels: ["email"],
-          recipients: ["dev-team@monita.dev"],
+          recipients: ["dev-team@apperio.dev"],
         },
         {
           level: 2, delayMinutes: 60,
           notifyChannels: ["email", "slack"],
-          recipients: ["team-lead@monita.dev"],
+          recipients: ["team-lead@apperio.dev"],
         },
       ],
       isActive: true,
@@ -699,8 +699,8 @@ function makeEscalationPolicies(
         {
           level: 1, delayMinutes: 0,
           notifyChannels: ["email", "webhook"],
-          recipients: ["billing@monita.dev"],
-          webhookUrl: "https://api.opsgenie.com/v1/json/monita-billing",
+          recipients: ["billing@apperio.dev"],
+          webhookUrl: "https://api.opsgenie.com/v1/json/apperio-billing",
         },
       ],
       isActive: false,
@@ -713,7 +713,7 @@ function makeNotifications(userId: Types.ObjectId): any[] {
   return [
     {
       userId, type: "success",
-      message: "Project \"Monita Demo\" created successfully",
+      message: "Project \"Apperio Demo\" created successfully",
       read: true,
       metadata: { action: "project_created", projectName: PROJECT_NAME },
       createdAt: daysAgo(25),
@@ -1070,7 +1070,7 @@ function makeAnomalies(projectId: string, userId: Types.ObjectId): any[] {
       description: "Network errors spiked — 45 failed requests in 15 minutes (baseline: 8). CDN returning 502 errors.",
       detectedAt: daysAgo(7), resolvedAt: daysAgo(7),
       acknowledged: true, acknowledgedBy: userId,
-      metadata: { affectedUrl: "https://cdn.monita.dev/assets/app.js", statusCode: 502 },
+      metadata: { affectedUrl: "https://cdn.apperio.dev/assets/app.js", statusCode: 502 },
     },
     {
       projectId, type: "response_time_degradation", severity: "info",
@@ -1175,7 +1175,7 @@ function makeSDKConfig(projectId: string): any {
     batchSize: 15,
     flushIntervalMs: 3000,
     environment: "production",
-    serviceName: "monita-demo-app",
+    serviceName: "apperio-demo-app",
     autoCapture: {
       errors: true,
       performance: true,
@@ -1252,7 +1252,7 @@ async function seed() {
 
   // ── Create a fully-populated project ─────────────────────────────────
   // Delete previous seed project if it exists (by name pattern)
-  const existingProject = await ProjectModel.findOne({ name: { $regex: /^Monita Demo/ } });
+  const existingProject = await ProjectModel.findOne({ name: { $regex: /^Apperio Demo/ } });
   if (existingProject) {
     const pid = existingProject._id;
     const pidStr = pid.toString();
@@ -1279,7 +1279,7 @@ async function seed() {
   const project = await ProjectModel.create({
     name: PROJECT_NAME,
     description:
-      "Full-featured demo project for Monita observability platform. Contains realistic data across all 7 event types, distributed traces, alert rules with escalation policies, anomaly detection, maintenance windows, source maps, SDK configuration, saved searches, custom dashboards, and user notifications.",
+      "Full-featured demo project for Apperio observability platform. Contains realistic data across all 7 event types, distributed traces, alert rules with escalation policies, anomaly detection, maintenance windows, source maps, SDK configuration, saved searches, custom dashboards, and user notifications.",
     apiKey: randomApiKey(),
     ownerId: userId,
     teamMembers: [],
@@ -1290,20 +1290,20 @@ async function seed() {
       slack: {
         enabled: true,
         webhookUrl: "https://hooks.slack.com/services/T00000/B00000/xxxxxxxxxxxx",
-        channel: "#monita-alerts",
+        channel: "#apperio-alerts",
         notifyOnCritical: true,
         notifyOnWarning: true,
         notifyOnInfo: false,
       },
       webhook: {
         enabled: true,
-        url: "https://events.pagerduty.com/integration/monita/enqueue",
+        url: "https://events.pagerduty.com/integration/apperio/enqueue",
         secret: "whsec_xxxxxxxxxxxxxxxxxxxx",
         retryCount: 3,
       },
       email: {
         enabled: true,
-        recipients: ["dev-team@monita.dev", "oncall@monita.dev"],
+        recipients: ["dev-team@apperio.dev", "oncall@apperio.dev"],
         digestFrequency: "hourly",
       },
     },

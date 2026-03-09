@@ -45,11 +45,11 @@ export class DiscordIntegration extends BaseIntegration {
         body: JSON.stringify({
           embeds: [
             {
-              title: "Monita Integration Test",
+              title: "Apperio Integration Test",
               description:
-                "This is a test message from Monita. Your Discord integration is working correctly.",
+                "This is a test message from Apperio. Your Discord integration is working correctly.",
               color: 0x00d97e,
-              footer: { text: "Monita Observability Platform" },
+              footer: { text: "Apperio Observability Platform" },
               timestamp: new Date().toISOString(),
             },
           ],
@@ -113,10 +113,10 @@ export class DiscordIntegration extends BaseIntegration {
     };
 
     const embed: Record<string, any> = {
-      title: title || "Monita Alert",
+      title: title || "Apperio Alert",
       description: description || "",
       color: colorMap[level || "info"] || 0x4d8ef8,
-      footer: { text: "Monita Observability Platform" },
+      footer: { text: "Apperio Observability Platform" },
       timestamp: new Date().toISOString(),
     };
 

@@ -40,7 +40,7 @@ export class MfaService {
 
     const secret = generateSecret();
     const otpauth = generateURI({
-      issuer: "Monita",
+      issuer: "Apperio",
       label: user.email,
       secret,
     });

@@ -183,11 +183,11 @@ export class UserService {
 
       await NotificationService.sendEmail({
         to: [user.email],
-        subject: "Monita — Reset Your Password",
+        subject: "Apperio — Reset Your Password",
         html: `
           <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #060b14; border-radius: 12px; overflow: hidden;">
             <div style="padding: 32px 32px 24px; text-align: center;">
-              <h1 style="color: #00d97e; font-size: 28px; margin: 0 0 4px;">Monita</h1>
+              <h1 style="color: #00d97e; font-size: 28px; margin: 0 0 4px;">Apperio</h1>
               <p style="color: #8b95a5; font-size: 13px; margin: 0;">Observability Platform</p>
             </div>
             <div style="padding: 0 32px 32px;">
@@ -206,12 +206,12 @@ export class UserService {
             </div>
             <div style="padding: 16px 32px; border-top: 1px solid #1e293b;">
               <p style="color: #475569; font-size: 11px; margin: 0; text-align: center;">
-                &copy; ${new Date().getFullYear()} Monita. All rights reserved.
+                &copy; ${new Date().getFullYear()} Apperio. All rights reserved.
               </p>
             </div>
           </div>
         `,
-        text: `Hi ${user.firstName},\n\nWe received a request to reset your Monita password.\n\nReset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.\n\n— Monita`,
+        text: `Hi ${user.firstName},\n\nWe received a request to reset your Apperio password.\n\nReset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.\n\n— Apperio`,
       });
 
       return { message: "If an account with that email exists, a reset link has been sent." };

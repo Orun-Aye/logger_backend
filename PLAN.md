@@ -1,4 +1,4 @@
-# PLAN.md — Monita Backend API Development Roadmap
+# PLAN.md — Apperio Backend API Development Roadmap
 
 > **Component**: `logger_backend/` — Express.js/TypeScript REST API with MongoDB
 > **Parent Plan**: [../PLAN.md](../PLAN.md)

@@ -1,6 +1,6 @@
-# Monita Backend API
+# Apperio Backend API
 
-Monita is a comprehensive observability and logging platform that helps developers monitor, debug, and optimize their applications in real-time. This repository contains the **Express.js/TypeScript REST API backend** for log ingestion, real-time monitoring, alerting, analytics, and AI-powered insights.
+Apperio is a comprehensive observability and logging platform that helps developers monitor, debug, and optimize their applications in real-time. This repository contains the **Express.js/TypeScript REST API backend** for log ingestion, real-time monitoring, alerting, analytics, and AI-powered insights.
 
 ## Quick Start
 
@@ -29,7 +29,7 @@ PORT=5000
 NODE_ENV=development
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/monita
+MONGODB_URI=mongodb://localhost:27017/apperio
 
 # Authentication
 JWT_SECRET=your-jwt-secret-key-here
@@ -752,7 +752,7 @@ For self-hosted deployments:
 ## Related Repositories
 
 - **Frontend Dashboard**: [remote-logger](https://github.com/Stanwukong/remote-logger) — Next.js/React UI
-- **JavaScript SDK**: [loghive-sdk](https://github.com/Stanwukong/loghive-sdk) — Client library (`monita` on npm)
+- **JavaScript SDK**: [loghive-sdk](https://github.com/Stanwukong/loghive-sdk) — Client library (`apperio` on npm)
 
 ## Contributing
 

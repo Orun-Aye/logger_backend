@@ -502,7 +502,7 @@ export class LogController {
 
       // Set appropriate headers for file download
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `monita-logs-${projectId}-${timestamp}.${exportOptions.format}`;
+      const filename = `apperio-logs-${projectId}-${timestamp}.${exportOptions.format}`;
       const contentType =
         exportOptions.format === "csv"
           ? "text/csv"

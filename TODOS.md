@@ -1,7 +1,7 @@
-# LogHive Backend - Server-Side Implementation TODO
+# Apperio Backend - Server-Side Implementation TODO
 
 ## 🎯 Overview
-This document tracks the server-side implementation tasks for transforming LogHive into an enterprise-grade logging platform. Based on the comprehensive roadmap analysis, these are the features that should be implemented on the backend server.
+This document tracks the server-side implementation tasks for transforming Apperio into an enterprise-grade logging platform. Based on the comprehensive roadmap analysis, these are the features that should be implemented on the backend server.
 
 ---
 

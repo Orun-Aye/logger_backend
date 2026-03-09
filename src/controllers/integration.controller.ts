@@ -85,17 +85,17 @@ export class IntegrationController {
           result = await NotificationService.sendSlack(
             webhookUrl,
             {
-              text: "Monita Test Notification",
+              text: "Apperio Test Notification",
               attachments: [
                 {
                   color: "good",
                   title: "Integration Test",
-                  text: `This is a test message from Monita for project "${project.name}". If you see this, your Slack integration is working correctly.`,
+                  text: `This is a test message from Apperio for project "${project.name}". If you see this, your Slack integration is working correctly.`,
                   fields: [
                     { title: "Project", value: project.name, short: true },
                     { title: "Status", value: "Connected", short: true },
                   ],
-                  footer: "Monita Integration Test",
+                  footer: "Apperio Integration Test",
                   ts: Math.floor(Date.now() / 1000),
                 },
               ],
@@ -115,15 +115,15 @@ export class IntegrationController {
 
           result = await NotificationService.sendEmail({
             to: recipients,
-            subject: `Monita - Integration Test for "${project.name}"`,
+            subject: `Apperio - Integration Test for "${project.name}"`,
             html: `
               <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: #0b1220; padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
-                  <h1 style="color: #00d97e; margin: 0; font-size: 24px;">Monita</h1>
+                  <h1 style="color: #00d97e; margin: 0; font-size: 24px;">Apperio</h1>
                   <p style="color: #8b95a5; margin: 8px 0 0 0; font-size: 14px;">Integration Test</p>
                 </div>
                 <div style="background: #111c2e; padding: 24px; border-radius: 0 0 8px 8px; color: #e1e4e8;">
-                  <p style="margin: 0 0 16px 0;">This is a test email from Monita.</p>
+                  <p style="margin: 0 0 16px 0;">This is a test email from Apperio.</p>
                   <p style="margin: 0 0 16px 0;">If you received this email, your email integration for project <strong style="color: #00d97e;">${project.name}</strong> is working correctly.</p>
                   <div style="background: #0b1220; padding: 16px; border-radius: 6px; margin-top: 16px;">
                     <p style="margin: 0; font-size: 13px; color: #8b95a5;">
@@ -135,7 +135,7 @@ export class IntegrationController {
                 </div>
               </div>
             `,
-            text: `Monita Integration Test\n\nThis is a test email for project "${project.name}". Your email integration is working correctly.\n\nTime: ${new Date().toISOString()}`,
+            text: `Apperio Integration Test\n\nThis is a test email for project "${project.name}". Your email integration is working correctly.\n\nTime: ${new Date().toISOString()}`,
           });
           break;
         }
@@ -157,7 +157,7 @@ export class IntegrationController {
                 id: project._id.toString(),
                 name: project.name,
               },
-              message: "This is a test webhook from Monita. Your webhook integration is working correctly.",
+              message: "This is a test webhook from Apperio. Your webhook integration is working correctly.",
               timestamp: new Date().toISOString(),
             },
             headers: integrationConfig.headers || {},

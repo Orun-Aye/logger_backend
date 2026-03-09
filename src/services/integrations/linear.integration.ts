@@ -8,7 +8,7 @@ export class LinearIntegration extends BaseIntegration {
   readonly type = "linear";
   readonly displayName = "Linear";
   readonly description =
-    "Create Linear issues from Monita alerts for streamlined project management and bug tracking.";
+    "Create Linear issues from Apperio alerts for streamlined project management and bug tracking.";
   readonly category = "issue_tracking" as const;
   readonly requiredFields = ["accessToken"];
   readonly optionalFields = ["teamId"];

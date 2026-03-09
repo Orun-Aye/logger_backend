@@ -88,7 +88,7 @@ export class ChangelogService {
           date: new Date("2025-06-01"),
           category: "feature",
           description:
-            "The first public release of Monita, a comprehensive observability platform for modern applications. Includes core logging infrastructure, error tracking, and a real-time dashboard for monitoring your services.",
+            "The first public release of Apperio, a comprehensive observability platform for modern applications. Includes core logging infrastructure, error tracking, and a real-time dashboard for monitoring your services.",
           highlights: [
             "Core log ingestion API with project-scoped API keys",
             "Real-time dashboard with log level distribution and trends",
@@ -96,7 +96,7 @@ export class ChangelogService {
             "JWT-based authentication and project management",
             "MongoDB-backed storage with optimized indexes",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
         {
           version: "1.1.0",
@@ -104,7 +104,7 @@ export class ChangelogService {
           date: new Date("2025-08-15"),
           category: "feature",
           description:
-            "Introduced the Monita JavaScript SDK with automatic instrumentation. Drop in a single script tag or npm install and capture errors, network requests, console output, page views, and user interactions without any manual setup.",
+            "Introduced the Apperio JavaScript SDK with automatic instrumentation. Drop in a single script tag or npm install and capture errors, network requests, console output, page views, and user interactions without any manual setup.",
           highlights: [
             "Automatic error capture with source context",
             "Network request monitoring with timing data",
@@ -113,7 +113,7 @@ export class ChangelogService {
             "Built-in PII sanitization with configurable rules",
             "Configurable batching with exponential backoff retries",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
         {
           version: "1.2.0",
@@ -129,7 +129,7 @@ export class ChangelogService {
             "Auto-resolve for stale alerts",
             "Escalation policies and maintenance windows",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
         {
           version: "1.3.0",
@@ -145,7 +145,7 @@ export class ChangelogService {
             "Regression detection across releases",
             "Redis-cached insights for sub-second dashboard loads",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
         {
           version: "1.4.0",
@@ -162,7 +162,7 @@ export class ChangelogService {
             "Advanced data retention policies",
             "Source map upload for minified stack traces",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
         {
           version: "1.5.0",
@@ -170,7 +170,7 @@ export class ChangelogService {
           date: new Date("2026-03-05"),
           category: "feature",
           description:
-            "Connect Monita to your existing workflow with first-class integrations. Plus, capture Core Web Vitals and distributed traces for end-to-end performance visibility across your entire stack.",
+            "Connect Apperio to your existing workflow with first-class integrations. Plus, capture Core Web Vitals and distributed traces for end-to-end performance visibility across your entire stack.",
           highlights: [
             "Integration testing framework for GitHub, Jira, PagerDuty, Discord, Teams, and Linear",
             "Core Web Vitals (LCP, FID, CLS, INP, TTFB) capture and analysis",
@@ -178,7 +178,7 @@ export class ChangelogService {
             "Custom dashboards with drag-and-drop widgets",
             "Funnel analysis for user journey tracking",
           ],
-          author: "Monita Team",
+          author: "Apperio Team",
         },
       ];
 
