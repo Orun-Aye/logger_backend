@@ -1,7 +1,7 @@
 {
   "name": "logger_backend",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "dist/server.js",
   "scripts": {
     "build": "tsc --build",
     "start": "node ./dist/server.js",
