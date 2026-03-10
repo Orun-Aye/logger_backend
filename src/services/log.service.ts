@@ -167,27 +167,6 @@ export class LogService {
         }
       }
 
-      // IMPORTANT: Re-evaluate this duplicate check for production logging.
-      // For high-volume logging, checking for exact duplicates (projectId, message, timestamp)
-      // can be a performance bottleneck and might prevent legitimate, slightly different logs.
-      // If true deduplication is needed, consider a more robust fingerprinting approach.
-      // For now, keeping it as per original logic, but with a warning.
-      const existingLog = await LogModel.findOne({
-        projectId: data.projectId,
-        message: data.message,
-        // Ensure timestamp is an ISO string for comparison as per schema
-        timestamp: normalizedTimestamp
-          ? normalizedTimestamp.toISOString()
-          : undefined,
-      });
-
-      if (existingLog) {
-        throw new LogServiceError(
-          "Log entry with the same project, message, and timestamp already exists. Consider if this is the desired behavior for log deduplication.",
-          { logData: data, existingLogId: existingLog._id }
-        );
-      }
-
       const ingestionEndTime = new Date();
       const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
 
