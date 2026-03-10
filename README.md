@@ -729,7 +729,7 @@ npm test -- --watch
 
 ### Vercel (Recommended)
 
-The backend is deployed on Vercel at `https://loghive-server.vercel.app/api/v1`.
+The backend is deployed on Vercel at `https://apperioserver.onrender.com/api/v1`.
 
 **Configuration**:
 - Root directory: `logger_backend`
