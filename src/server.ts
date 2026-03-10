@@ -84,7 +84,7 @@ const restrictedCors = cors({
 // CORS configuration for log ingestion (open to all origins)
 const logIngestionCors = cors({
   origin: true, // Allow all origins
-  methods: ["POST", "GET"],
+  methods: ["POST", "GET", "OPTIONS"],
   credentials: false,
   allowedHeaders: [
     "Content-Type",
@@ -94,6 +94,9 @@ const logIngestionCors = cors({
     "User-Agent",
   ],
 });
+
+// Handle preflight OPTIONS requests globally (before any route matching)
+app.options("*", cors({ origin: true, credentials: true }));
 
 // Phase 1.3 Global Middleware (order matters!)
 app.use(express.json());
