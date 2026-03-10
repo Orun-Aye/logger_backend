@@ -96,7 +96,7 @@ const logIngestionCors = cors({
 });
 
 // Handle preflight OPTIONS requests globally (before any route matching)
-app.options("*", cors({ origin: true, credentials: true }));
+app.options("/{*path}", cors({ origin: true, credentials: true }));
 
 // Phase 1.3 Global Middleware (order matters!)
 app.use(express.json());
