@@ -271,6 +271,67 @@ class IntegrationManager {
   }
 
   /**
+   * Execute an action for a project without requiring userId.
+   * Used by server-side processes like alert notifications.
+   */
+  async executeActionForProject(
+    projectId: string,
+    integrationType: string,
+    action: string,
+    payload: Record<string, any>
+  ): Promise<{ success: boolean; result?: any; error?: string }> {
+    try {
+      const doc = await IntegrationModel.findOne({
+        projectId: new mongoose.Types.ObjectId(projectId),
+        type: integrationType,
+        status: "connected",
+      });
+
+      if (!doc) {
+        return {
+          success: false,
+          error: `No connected ${integrationType} integration found for project ${projectId}`,
+        };
+      }
+
+      const handler = this.registry.get(doc.type);
+      if (!handler) {
+        return {
+          success: false,
+          error: `Integration type "${doc.type}" not found in registry`,
+        };
+      }
+
+      const result = await handler.handleAction(
+        action,
+        payload,
+        doc.config as Record<string, any>
+      );
+
+      // Update lastSyncAt
+      doc.metadata.lastSyncAt = new Date();
+      if (!result.success) {
+        doc.metadata.syncErrors = [
+          ...(doc.metadata.syncErrors || []).slice(-9),
+          result.message || "Action failed",
+        ];
+      }
+      await doc.save();
+
+      return {
+        success: result.success,
+        result: result.data,
+        error: result.success ? undefined : result.message,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `executeActionForProject failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
    * Get a single integration by ID (for detail views).
    */
   async getIntegrationById(

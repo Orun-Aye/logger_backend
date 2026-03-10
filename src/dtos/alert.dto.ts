@@ -35,7 +35,7 @@ export interface CreateAlertRuleDTO {
   projectId: string | Types.ObjectId;
   condition: SimpleConditionDTO | CompositeConditionDTO;
   isActive?: boolean;
-  notifyChannels?: ("email" | "slack" | "webhook")[];
+  notifyChannels?: ("email" | "slack" | "webhook" | "github")[];
   notificationConfig?: {
     emails?: string[];
     slackWebhookUrl?: string;
@@ -53,7 +53,7 @@ export interface UpdateAlertRuleDTO {
   description?: string;
   condition?: SimpleConditionDTO | CompositeConditionDTO;
   isActive?: boolean;
-  notifyChannels?: ("email" | "slack" | "webhook")[];
+  notifyChannels?: ("email" | "slack" | "webhook" | "github")[];
   notificationConfig?: {
     emails?: string[];
     slackWebhookUrl?: string;
@@ -125,7 +125,7 @@ export interface AlertTimelineQueryDTO {
 export interface EscalationLevelDTO {
   level: number;
   delayMinutes: number;
-  notifyChannels: ("email" | "slack" | "webhook")[];
+  notifyChannels: ("email" | "slack" | "webhook" | "github")[];
   recipients: string[];
   webhookUrl?: string;
 }

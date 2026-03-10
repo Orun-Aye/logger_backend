@@ -10,7 +10,7 @@ const objectIdRegex = /^[0-9a-fA-F]{24}$/;
 /**
  * Notification channel enum
  */
-const notifyChannelSchema = z.enum(["email", "slack", "webhook"]);
+const notifyChannelSchema = z.enum(["email", "slack", "webhook", "github"]);
 
 /**
  * Alert condition schema

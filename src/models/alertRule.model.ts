@@ -27,7 +27,7 @@ export interface IAlertRules extends Document {
   // Backward compatible: can be simple or composite
   condition: ISimpleCondition | ICompositeCondition;
   isActive: boolean;
-  notifyChannels: ("email" | "slack" | "webhook")[];
+  notifyChannels: ("email" | "slack" | "webhook" | "github")[];
   notificationConfig: any;
   escalationPolicyId?: Types.ObjectId;
   snoozeUntil?: Date;
@@ -66,7 +66,7 @@ const AlertRuleSchema: Schema<IAlertRules> = new Schema(
     isActive: { type: Boolean, default: true, index: true },
     notifyChannels: {
       type: [String],
-      enum: ["email", "slack", "webhook"],
+      enum: ["email", "slack", "webhook", "github"],
       default: ["email"],
     },
     notificationConfig: {

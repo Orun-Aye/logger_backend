@@ -45,6 +45,8 @@ import sourceMapRoutes from "./routes/sourceMap.routes";
 import apiTokenRoutes from "./routes/apiToken.routes";
 // Organization & Team management routes
 import organizationRoutes from "./routes/organization.routes";
+// Session Replay routes
+import replayRoutes from "./routes/replay.routes";
 // Integration testing routes
 import integrationRoutes from "./routes/integration.routes";
 // Third-party integrations management routes
@@ -546,6 +548,9 @@ app.use("/api/v1/integrations/manage", restrictedCors, integrationsRoutes);
 app.use("/api/v1/admin", restrictedCors, adminRoutes);
 // Billing & Subscription routes
 app.use("/api/v1/billing", restrictedCors, billingRoutes);
+
+// Session Replay routes (must be before log routes catch-all)
+app.use("/api/v1", logIngestionCors, replayRoutes);
 
 // Apply open CORS to log ingestion routes
 app.use("/api/v1/", logIngestionCors, logRoutes);
