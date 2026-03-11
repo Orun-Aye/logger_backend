@@ -1,14 +1,5 @@
 "use strict";
 // src/controllers/log.controller.ts
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LogController = void 0;
 const log_service_1 = require("../services/log.service");
@@ -83,7 +74,27 @@ class LogController {
             Object.values(log_dto_1.LogLevel).includes(req.query.level)
             ? req.query.level
             : undefined;
+        // Support multiple levels (e.g., ?levels=error&levels=warn)
+        let levels;
+        if (req.query.levels) {
+            const levelsParam = Array.isArray(req.query.levels)
+                ? req.query.levels
+                : [req.query.levels];
+            levels = levelsParam.filter((l) => typeof l === "string" && Object.values(log_dto_1.LogLevel).includes(l));
+            if (levels.length === 0)
+                levels = undefined;
+        }
         const service = typeof req.query.service === "string" ? req.query.service : undefined;
+        // Support multiple services (e.g., ?services=api&services=web)
+        let services;
+        if (req.query.services) {
+            const servicesParam = Array.isArray(req.query.services)
+                ? req.query.services
+                : [req.query.services];
+            services = servicesParam.filter((s) => typeof s === "string");
+            if (services.length === 0)
+                services = undefined;
+        }
         const environment = typeof req.query.environment === "string" ? req.query.environment : undefined;
         const search = typeof req.query.search === "string" ? req.query.search : undefined;
         const startDate = typeof req.query.startDate === "string"
@@ -106,7 +117,9 @@ class LogController {
             sortBy,
             sortOrder,
             level,
+            levels,
             service,
+            services,
             environment,
             search,
             startDate,
@@ -120,197 +133,271 @@ class LogController {
         };
     }
     // --- Core Log Operations ---
-    static createLog(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                // Assuming projectId comes from req.params as /projects/:projectId/logs
-                const { projectId } = req.params;
-                const logData = Object.assign(Object.assign({}, req.body), { projectId });
-                // Basic validation for required fields in the body
-                if (!logData.level || !logData.message) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Log level and message are required.",
-                    });
-                }
-                const log = yield log_service_1.LogService.createLog(logData);
-                return res.status(201).json({
-                    status: "success",
-                    message: "Log entry created successfully",
-                    data: log,
+    static async createLog(req, res) {
+        try {
+            // Assuming projectId comes from req.params as /projects/:projectId/logs
+            const { projectId } = req.params;
+            const logData = { ...req.body, projectId };
+            // Basic validation for required fields in the body
+            if (!logData.level || !logData.message) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Log level and message are required.",
                 });
             }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to create log entry");
-            }
-        });
+            const log = await log_service_1.LogService.createLog(logData);
+            return res.status(201).json({
+                status: "success",
+                message: "Log entry created successfully",
+                data: log,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to create log entry");
+        }
     }
-    static getAllLogs(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params; // Get projectId from route params
-                const filters = LogController.validatePaginationAndFilterParams(req, projectId); // Pass projectId to helper
-                const result = yield log_service_1.LogService.getAllLogs(filters);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Logs fetched successfully",
-                    data: result.logs,
-                    meta: {
-                        pagination: result.pagination,
-                        filters: filters, // Include all applied filters in meta for clarity
-                    },
-                });
-            }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to fetch logs");
-            }
-        });
+    static async getAllLogs(req, res) {
+        try {
+            const { projectId } = req.params; // Get projectId from route params
+            const filters = LogController.validatePaginationAndFilterParams(req, projectId); // Pass projectId to helper
+            const result = await log_service_1.LogService.getAllLogs(filters);
+            return res.status(200).json({
+                status: "success",
+                message: "Logs fetched successfully",
+                data: result.logs,
+                meta: {
+                    pagination: result.pagination,
+                    filters: filters, // Include all applied filters in meta for clarity
+                },
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to fetch logs");
+        }
     }
-    static getLogById(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { logId } = req.params; // Assuming route is /logs/:logId or /projects/:projectId/logs/:logId
-                const log = yield log_service_1.LogService.getLogById(logId);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Log fetched successfully",
-                    data: log,
-                });
-            }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to fetch log");
-            }
-        });
+    static async getLogById(req, res) {
+        try {
+            const { logId } = req.params; // Assuming route is /logs/:logId or /projects/:projectId/logs/:logId
+            const log = await log_service_1.LogService.getLogById(logId);
+            return res.status(200).json({
+                status: "success",
+                message: "Log fetched successfully",
+                data: log,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to fetch log");
+        }
     }
     // --- Log Analytics and Summaries ---
-    static getLogsSummary(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params;
-                const { startDate, endDate, level, service, environment, eventType } = req.query;
-                const options = {
-                    startDate: startDate ? new Date(startDate) : undefined,
-                    endDate: endDate ? new Date(endDate) : undefined,
-                    level: level,
-                    service: service,
-                    environment: environment,
-                    eventType: eventType,
-                };
-                const summary = yield log_service_1.LogService.getLogsSummary(projectId, options);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Log summary fetched successfully",
-                    data: summary,
-                    meta: summary.metadata,
-                });
-            }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to fetch log summary");
-            }
-        });
+    static async getLogsSummary(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { startDate, endDate, level, service, environment, eventType } = req.query;
+            const options = {
+                startDate: startDate ? new Date(startDate) : undefined,
+                endDate: endDate ? new Date(endDate) : undefined,
+                level: level,
+                service: service,
+                environment: environment,
+                eventType: eventType,
+            };
+            const summary = await log_service_1.LogService.getLogsSummary(projectId, options);
+            return res.status(200).json({
+                status: "success",
+                message: "Log summary fetched successfully",
+                data: summary,
+                meta: summary.metadata,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to fetch log summary");
+        }
     }
-    static getLogTrends(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params;
-                const { startDate, endDate, groupBy, level, service, environment, eventType } = req.query;
-                const options = {
-                    startDate: startDate ? new Date(startDate) : undefined,
-                    endDate: endDate ? new Date(endDate) : undefined,
-                    groupBy: groupBy,
-                    level: level,
-                    service: service,
-                    environment: environment,
-                    eventType: eventType,
-                };
-                const trends = yield log_service_1.LogService.getLogTrends(projectId, options);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Log trends fetched successfully",
-                    data: trends.trends,
-                    meta: trends.metadata,
-                });
-            }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to fetch log trends");
-            }
-        });
+    static async getLogTrends(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { startDate, endDate, groupBy, level, service, environment, eventType } = req.query;
+            const options = {
+                startDate: startDate ? new Date(startDate) : undefined,
+                endDate: endDate ? new Date(endDate) : undefined,
+                groupBy: groupBy,
+                level: level,
+                service: service,
+                environment: environment,
+                eventType: eventType,
+            };
+            const trends = await log_service_1.LogService.getLogTrends(projectId, options);
+            return res.status(200).json({
+                status: "success",
+                message: "Log trends fetched successfully",
+                data: trends.trends,
+                meta: trends.metadata,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to fetch log trends");
+        }
     }
     // --- Log Deletion ---
-    static deleteLogs(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params; // projectId is required for deletion
-                const filters = LogController.validatePaginationAndFilterParams(req, projectId); // Use existing helper for filters
-                // IMPORTANT: Ensure filters are not empty beyond projectId to prevent accidental mass deletion.
-                // The service layer already has a safeguard, but adding a controller-level check is good practice.
-                const filterKeys = Object.keys(filters).filter(key => key !== 'projectId' && filters[key] !== undefined);
-                if (filterKeys.length === 0) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "At least one specific filter (e.g., level, search, startDate, eventType) is required for log deletion to prevent accidental mass deletion.",
-                    });
-                }
-                const result = yield log_service_1.LogService.deleteLogs(filters);
-                return res.status(200).json({
-                    status: "success",
-                    message: `Successfully deleted ${result.deletedCount} log entries.`,
-                    data: { deletedCount: result.deletedCount },
+    static async deleteLogs(req, res) {
+        try {
+            const { projectId } = req.params; // projectId is required for deletion
+            const filters = LogController.validatePaginationAndFilterParams(req, projectId); // Use existing helper for filters
+            // IMPORTANT: Ensure filters are not empty beyond projectId to prevent accidental mass deletion.
+            // The service layer already has a safeguard, but adding a controller-level check is good practice.
+            const filterKeys = Object.keys(filters).filter(key => key !== 'projectId' && filters[key] !== undefined);
+            if (filterKeys.length === 0) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "At least one specific filter (e.g., level, search, startDate, eventType) is required for log deletion to prevent accidental mass deletion.",
                 });
             }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to delete logs");
-            }
-        });
+            const result = await log_service_1.LogService.deleteLogs(filters);
+            return res.status(200).json({
+                status: "success",
+                message: `Successfully deleted ${result.deletedCount} log entries.`,
+                data: { deletedCount: result.deletedCount },
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to delete logs");
+        }
     }
     // --- Utility Methods for UI Filters ---
-    static getDistinctValues(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId, field } = req.params; // field will be a path param like /distinct-values/:field
-                const allowedFields = [
-                    "level", "service", "environment", "eventType", "url", "userAgent", "error.name"
-                ];
-                if (!field || !allowedFields.includes(field)) {
-                    return res.status(400).json({
+    static async getDistinctValues(req, res) {
+        try {
+            const { projectId, field } = req.params; // field will be a path param like /distinct-values/:field
+            const allowedFields = [
+                "level", "service", "environment", "eventType", "url", "userAgent", "error.name"
+            ];
+            if (!field || !allowedFields.includes(field)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: `Invalid or missing field parameter. Allowed fields are: ${allowedFields.join(", ")}`,
+                });
+            }
+            const distinctValues = await log_service_1.LogService.getDistinctValues(projectId, field);
+            return res.status(200).json({
+                status: "success",
+                message: `Distinct values for '${field}' fetched successfully`,
+                data: distinctValues,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, `Failed to fetch distinct values for field '${req.params.field}'`);
+        }
+    }
+    static async getUniqueErrorMessages(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { page, limit, search } = req.query;
+            const options = {
+                page: page ? parseInt(page) : undefined,
+                limit: limit ? parseInt(limit) : undefined,
+                search: search,
+            };
+            const result = await log_service_1.LogService.getUniqueErrorMessages(projectId, options);
+            return res.status(200).json({
+                status: "success",
+                message: "Unique error messages fetched successfully",
+                data: result.messages,
+                meta: result.pagination,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to fetch unique error messages");
+        }
+    }
+    // --- Batch Operations ---
+    static async batchCreateLogs(req, res) {
+        try {
+            const { projectId } = req.params;
+            const batchData = req.body; // BatchLogDTO
+            if (!batchData.logs || !Array.isArray(batchData.logs)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Request body must contain a 'logs' array",
+                });
+            }
+            const result = await log_service_1.LogService.batchCreate(projectId, batchData);
+            return res.status(201).json({
+                status: "success",
+                message: `Batch processing complete: ${result.success} succeeded, ${result.failed} failed`,
+                data: result,
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to process batch log creation");
+        }
+    }
+    // --- Advanced Search ---
+    static async structuredSearch(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { query } = req.body;
+            if (!query || typeof query !== "string") {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Request body must contain a 'query' string field",
+                });
+            }
+            const page = Math.max(1, parseInt(req.body.page) || 1);
+            const limit = Math.min(1000, Math.max(1, parseInt(req.body.limit) || 100));
+            const result = await log_service_1.LogService.structuredSearch(projectId, query, page, limit);
+            return res.status(200).json({
+                status: "success",
+                message: "Structured search executed successfully",
+                data: result.logs,
+                meta: {
+                    pagination: result.pagination,
+                    query: query,
+                },
+            });
+        }
+        catch (error) {
+            return LogController.handleError(error, res, "Failed to execute structured search");
+        }
+    }
+    // --- Export Operations ---
+    static async exportLogs(req, res) {
+        try {
+            const { projectId } = req.params;
+            const exportOptions = req.body; // ExportLogsQueryDTO
+            if (!exportOptions.format || !["csv", "json"].includes(exportOptions.format)) {
+                res.status(400).json({
+                    status: "error",
+                    message: "Export format must be either 'csv' or 'json'",
+                });
+                return;
+            }
+            const stream = await log_service_1.LogService.exportLogs(projectId, exportOptions);
+            // Set appropriate headers for file download
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const filename = `apperio-logs-${projectId}-${timestamp}.${exportOptions.format}`;
+            const contentType = exportOptions.format === "csv"
+                ? "text/csv"
+                : "application/json";
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+            res.setHeader("Transfer-Encoding", "chunked");
+            // Pipe the stream to the response
+            stream.pipe(res);
+            stream.on("error", (error) => {
+                console.error("Export stream error:", error);
+                if (!res.headersSent) {
+                    res.status(500).json({
                         status: "error",
-                        message: `Invalid or missing field parameter. Allowed fields are: ${allowedFields.join(", ")}`,
+                        message: "Failed to export logs",
                     });
                 }
-                const distinctValues = yield log_service_1.LogService.getDistinctValues(projectId, field);
-                return res.status(200).json({
-                    status: "success",
-                    message: `Distinct values for '${field}' fetched successfully`,
-                    data: distinctValues,
-                });
+            });
+        }
+        catch (error) {
+            if (!res.headersSent) {
+                LogController.handleError(error, res, "Failed to export logs");
             }
-            catch (error) {
-                return LogController.handleError(error, res, `Failed to fetch distinct values for field '${req.params.field}'`);
-            }
-        });
-    }
-    static getUniqueErrorMessages(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params;
-                const { page, limit, search } = req.query;
-                const options = {
-                    page: page ? parseInt(page) : undefined,
-                    limit: limit ? parseInt(limit) : undefined,
-                    search: search,
-                };
-                const result = yield log_service_1.LogService.getUniqueErrorMessages(projectId, options);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Unique error messages fetched successfully",
-                    data: result.messages,
-                    meta: result.pagination,
-                });
-            }
-            catch (error) {
-                return LogController.handleError(error, res, "Failed to fetch unique error messages");
-            }
-        });
+        }
     }
 }
 exports.LogController = LogController;

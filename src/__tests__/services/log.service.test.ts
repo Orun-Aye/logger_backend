@@ -122,7 +122,7 @@ describe("LogService", () => {
 
       expect(result.ingestionStartTime).toBeDefined();
       expect(result.ingestionEndTime).toBeDefined();
-      expect(result.responseTime).toBeGreaterThanOrEqual(0);
+      expect(result.ingestionLatency).toBeGreaterThanOrEqual(0);
     });
   });
 

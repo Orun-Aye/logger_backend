@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardInsightsController = void 0;
 const insights_service_1 = require("../services/insights.service");
@@ -116,69 +107,68 @@ class DashboardInsightsController {
      * Handles fetching dashboard insights for a specific project.
      * GET /api/insights/:projectId
      */
-    static getProjectInsights(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const startTime = process.hrtime.bigint(); // Start timing controller execution
-            try {
-                const { projectId } = req.params;
-                if (!projectId) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Project ID is required in the URL",
-                    });
-                }
-                // Validate and parse insights query paramters
-                const insightsOptions = DashboardInsightsController.validateInsightsQueryParams(req);
-                // Call the service method
-                const insights = yield insights_service_1.DashboardInsightsService.getProjectInsights(projectId, insightsOptions);
-                const endTime = process.hrtime.bigint();
-                const queryExecutionTime = Number(endTime - startTime) / 1000000; // Convert to ms
-                // Add controller-level metadata
-                const responseMeta = Object.assign(Object.assign({}, insights.meta), { controllerExecutionTime: queryExecutionTime });
-                // Ensure timeRange.from/to are ISO strings in meta for consistent API response
-                if (insights.timeRange) {
-                    responseMeta.timeRange = {
-                        from: insights.timeRange.from.toISOString(),
-                        to: insights.timeRange.from.toISOString(),
-                        range: insights.timeRange.range,
-                    };
-                }
-                return res.status(200).json({
-                    status: "success",
-                    message: "Dashboard insights fetched successfully.",
-                    data: insights,
-                    meta: responseMeta,
+    static async getProjectInsights(req, res) {
+        const startTime = process.hrtime.bigint(); // Start timing controller execution
+        try {
+            const { projectId } = req.params;
+            if (!projectId) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Project ID is required in the URL",
                 });
             }
-            catch (error) {
-                return DashboardInsightsController.handleError(error, res, "Failed to fetch dashboard insights");
+            // Validate and parse insights query paramters
+            const insightsOptions = DashboardInsightsController.validateInsightsQueryParams(req);
+            // Call the service method
+            const insights = await insights_service_1.DashboardInsightsService.getProjectInsights(projectId, insightsOptions);
+            const endTime = process.hrtime.bigint();
+            const queryExecutionTime = Number(endTime - startTime) / 1_000_000; // Convert to ms
+            // Add controller-level metadata
+            const responseMeta = {
+                ...insights.meta, // Include meta from service (cached status, service query time),
+                controllerExecutionTime: queryExecutionTime,
+            };
+            // Ensure timeRange.from/to are ISO strings in meta for consistent API response
+            if (insights.timeRange) {
+                responseMeta.timeRange = {
+                    from: insights.timeRange.from.toISOString(),
+                    to: insights.timeRange.from.toISOString(),
+                    range: insights.timeRange.range,
+                };
             }
-        });
+            return res.status(200).json({
+                status: "success",
+                message: "Dashboard insights fetched successfully.",
+                data: insights,
+                meta: responseMeta,
+            });
+        }
+        catch (error) {
+            return DashboardInsightsController.handleError(error, res, "Failed to fetch dashboard insights");
+        }
     }
     /**
      * Handles invalidating the cache for a specific project.
      * POST /api/insights/:projectId/invalidate-cache
      */
-    static invalidateProjectCache(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { projectId } = req.params;
-                if (!projectId) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Project ID is required",
-                    });
-                }
-                yield insights_service_1.DashboardInsightsService.invalidateProjectCache(projectId);
-                return res.status(200).json({
-                    status: "success",
-                    message: `Cache for project ${projectId} invalidated successfully.`,
+    static async invalidateProjectCache(req, res) {
+        try {
+            const { projectId } = req.params;
+            if (!projectId) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Project ID is required",
                 });
             }
-            catch (error) {
-                return DashboardInsightsController.handleError(error, res, "Failed to invalidate project cache");
-            }
-        });
+            await insights_service_1.DashboardInsightsService.invalidateProjectCache(projectId);
+            return res.status(200).json({
+                status: "success",
+                message: `Cache for project ${projectId} invalidated successfully.`,
+            });
+        }
+        catch (error) {
+            return DashboardInsightsController.handleError(error, res, "Failed to invalidate project cache");
+        }
     }
 }
 exports.DashboardInsightsController = DashboardInsightsController;

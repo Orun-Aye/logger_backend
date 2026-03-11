@@ -70,9 +70,6 @@ initializeConfig();
 const app = express();
 const server = createServer(app);
 
-// Check if running in Vercel serverless environment
-const isVercel = process.env.VERCEL === "1";
-
 // CORS configuration for dashboard/admin routes (restricted)
 const restrictedCors = cors({
   origin: config.cors.origin,
@@ -489,10 +486,10 @@ Authorization: Bearer YOUR_JWT_TOKEN
 
             <div class="section">
               <h2>🔧 Environment Status</h2>
-              <p><strong>Deployment:</strong> ${isVercel ? 'Vercel Serverless' : 'Standalone Server'}</p>
+              <p><strong>Deployment:</strong>Standalone Server</p>
               <p><strong>Port:</strong> ${config.server.port}</p>
               <p><strong>Database:</strong> MongoDB Connected</p>
-              <p><strong>WebSocket:</strong> ${isVercel ? 'Disabled (Serverless)' : 'Enabled'}</p>
+              <p><strong>WebSocket:</strong> Enabled</p>
               <p><strong>Redis Cache:</strong> Available</p>
               <p><strong>AI Services:</strong> OpenAI Integration Active</p>
             </div>
@@ -572,8 +569,7 @@ app.use(notFoundHandler);
 app.use(errorHandlerMiddleware);
 
 // Start the server only if not in Vercel environment
-if (!isVercel) {
-  const startServer = async () => {
+ const startServer = async () => {
     try {
       // Connect to database
       await connectDatabase();
@@ -609,16 +605,6 @@ if (!isVercel) {
   };
 
   startServer();
-} else {
-  // In Vercel, just connect to DB without starting server
-  connectDatabase()
-    .then(() => ChangelogService.seedIfEmpty())
-    .catch((err) => {
-      logger.error("Failed to connect to database", {
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    });
-}
 
 
 export default app;

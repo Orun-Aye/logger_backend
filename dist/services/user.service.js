@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -17,6 +8,8 @@ const user_model_1 = require("../models/user.model");
 const dotenv_1 = __importDefault(require("dotenv"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
+const crypto_1 = __importDefault(require("crypto"));
+const notification_service_1 = require("./notification.service");
 dotenv_1.default.config();
 const secret = process.env.JWT_SECRET;
 class UserNotFoundError extends Error {
@@ -60,91 +53,220 @@ class UserService {
             throw new UserValidationError("Password is required");
         }
     }
-    static createUser(data) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                this.validateUserSignupData(data);
-                // Check for existing user with the same email
-                const existingUser = yield user_model_1.UserModel.findOne({
-                    email: data.email,
-                });
-                if (existingUser) {
-                    throw new UserValidationError("User with this email already exists");
-                }
-                // Hash the password here if needed
-                const hashedPassword = yield bcrypt_1.default.hash(data.password, 10);
-                // Create a new user
-                const newUser = new user_model_1.UserModel({
-                    email: data.email,
-                    firstName: data.firstName,
-                    lastName: data.lastName,
-                    password: hashedPassword, // Use the hashed password
-                    role: data.role || "developer",
-                });
-                const savedUser = yield newUser.save();
-                if (!secret) {
-                    throw new Error("JWT secret is not defined in environment variables");
-                }
-                const token = jsonwebtoken_1.default.sign({ userId: savedUser._id }, secret, {
-                    expiresIn: "10h",
-                });
-                return {
-                    _id: savedUser._id,
-                    email: savedUser.email,
-                    firstName: savedUser.firstName,
-                    lastName: savedUser.lastName,
-                    role: savedUser.role,
-                    token,
-                    joinedAt: savedUser.joinedAt,
-                };
+    static async createUser(data) {
+        try {
+            this.validateUserSignupData(data);
+            // Check for existing user with the same email
+            const existingUser = await user_model_1.UserModel.findOne({
+                email: data.email,
+            });
+            if (existingUser) {
+                throw new UserValidationError("User with this email already exists");
             }
-            catch (error) {
-                if (error instanceof UserValidationError) {
-                    throw error; // Re-throw validation errors
-                }
-                throw new Error(`Failed to create user: ${error}`);
+            // Hash the password here if needed
+            const hashedPassword = await bcrypt_1.default.hash(data.password, 10);
+            // Create a new user
+            const newUser = new user_model_1.UserModel({
+                email: data.email,
+                firstName: data.firstName,
+                lastName: data.lastName,
+                password: hashedPassword, // Use the hashed password
+                role: data.role || "developer",
+            });
+            const savedUser = await newUser.save();
+            if (!secret) {
+                throw new Error("JWT secret is not defined in environment variables");
             }
-        });
+            const token = jsonwebtoken_1.default.sign({ userId: savedUser._id }, secret, {
+                expiresIn: "10h",
+            });
+            return {
+                _id: savedUser._id,
+                email: savedUser.email,
+                firstName: savedUser.firstName,
+                lastName: savedUser.lastName,
+                role: savedUser.role,
+                token,
+                joinedAt: savedUser.joinedAt,
+            };
+        }
+        catch (error) {
+            if (error instanceof UserValidationError) {
+                throw error; // Re-throw validation errors
+            }
+            throw new Error(`Failed to create user: ${error}`);
+        }
     }
-    static loginUser(data) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                this.validateUserLoginData(data);
-                // Find user by email
-                const user = yield user_model_1.UserModel.findOne({
-                    email: data.email,
-                });
-                if (!user) {
-                    throw new UserNotFoundError();
-                }
-                const isPasswordValid = yield bcrypt_1.default.compare(data.password, user.password);
-                if (!isPasswordValid) {
-                    throw new UserValidationError("Invalid email or password");
-                }
-                if (!secret) {
-                    throw new Error("JWT secret is not defined in environment variables");
-                }
-                const token = jsonwebtoken_1.default.sign({ userId: user._id }, secret, {
-                    expiresIn: "10h",
-                });
-                // Here you would typically check the password, but for simplicity, we assume password is not used
+    static async loginUser(data) {
+        try {
+            this.validateUserLoginData(data);
+            // Find user by email
+            const user = await user_model_1.UserModel.findOne({
+                email: data.email,
+            });
+            if (!user) {
+                throw new UserNotFoundError();
+            }
+            const isPasswordValid = await bcrypt_1.default.compare(data.password, user.password);
+            if (!isPasswordValid) {
+                throw new UserValidationError("Invalid email or password");
+            }
+            if (!secret) {
+                throw new Error("JWT secret is not defined in environment variables");
+            }
+            // If MFA is enabled, return a short-lived MFA token instead of full JWT
+            if (user.mfaEnabled) {
+                const mfaToken = jsonwebtoken_1.default.sign({ userId: user._id, mfaRequired: true }, secret, { expiresIn: "5m" });
                 return {
-                    _id: user._id,
-                    email: user.email,
-                    firstName: user.firstName,
-                    lastName: user.lastName,
-                    role: user.role,
-                    token,
-                    joinedAt: user.joinedAt,
+                    requiresMfa: true,
+                    mfaToken,
                 };
             }
-            catch (error) {
-                if (error instanceof UserValidationError) {
-                    throw error; // Re-throw validation errors
-                }
-                throw new Error(`Failed to login user: ${error}`);
+            const token = jsonwebtoken_1.default.sign({ userId: user._id }, secret, {
+                expiresIn: "10h",
+            });
+            return {
+                _id: user._id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                role: user.role,
+                token,
+                joinedAt: user.joinedAt,
+            };
+        }
+        catch (error) {
+            if (error instanceof UserValidationError || error instanceof UserNotFoundError) {
+                throw error;
             }
-        });
+            throw new Error(`Failed to login user: ${error}`);
+        }
+    }
+    static async forgotPassword(email) {
+        try {
+            const user = await user_model_1.UserModel.findOne({ email: email.toLowerCase().trim() });
+            // Always return success to prevent email enumeration
+            if (!user) {
+                return { message: "If an account with that email exists, a reset link has been sent." };
+            }
+            // Generate raw token and hash for storage
+            const rawToken = crypto_1.default.randomBytes(32).toString("hex");
+            const hashedToken = crypto_1.default.createHash("sha256").update(rawToken).digest("hex");
+            user.resetPasswordToken = hashedToken;
+            user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+            await user.save();
+            // Build reset URL pointing to frontend
+            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+            const resetUrl = `${frontendUrl}/reset-password/${rawToken}`;
+            await notification_service_1.NotificationService.sendEmail({
+                to: [user.email],
+                subject: "Apperio — Reset Your Password",
+                html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #060b14; border-radius: 12px; overflow: hidden;">
+            <div style="padding: 32px 32px 24px; text-align: center;">
+              <h1 style="color: #00d97e; font-size: 28px; margin: 0 0 4px;">Apperio</h1>
+              <p style="color: #8b95a5; font-size: 13px; margin: 0;">Observability Platform</p>
+            </div>
+            <div style="padding: 0 32px 32px;">
+              <h2 style="color: #e2e8f0; font-size: 20px; margin: 0 0 12px;">Password Reset Request</h2>
+              <p style="color: #8b95a5; font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
+                Hi ${user.firstName}, we received a request to reset your password. Click the button below to choose a new one. This link expires in <strong style="color: #e2e8f0;">1 hour</strong>.
+              </p>
+              <div style="text-align: center; margin: 0 0 24px;">
+                <a href="${resetUrl}" style="display: inline-block; background: #00d97e; color: #060b14; font-weight: 600; font-size: 14px; padding: 12px 32px; border-radius: 8px; text-decoration: none;">
+                  Reset Password
+                </a>
+              </div>
+              <p style="color: #8b95a5; font-size: 12px; line-height: 1.5; margin: 0;">
+                If you didn&rsquo;t request this, you can safely ignore this email. Your password won&rsquo;t change.
+              </p>
+            </div>
+            <div style="padding: 16px 32px; border-top: 1px solid #1e293b;">
+              <p style="color: #475569; font-size: 11px; margin: 0; text-align: center;">
+                &copy; ${new Date().getFullYear()} Apperio. All rights reserved.
+              </p>
+            </div>
+          </div>
+        `,
+                text: `Hi ${user.firstName},\n\nWe received a request to reset your Apperio password.\n\nReset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.\n\n— Apperio`,
+            });
+            return { message: "If an account with that email exists, a reset link has been sent." };
+        }
+        catch (error) {
+            throw new Error(`Failed to process password reset request: ${error}`);
+        }
+    }
+    static async resetPassword(token, newPassword) {
+        try {
+            const hashedToken = crypto_1.default.createHash("sha256").update(token).digest("hex");
+            const user = await user_model_1.UserModel.findOne({
+                resetPasswordToken: hashedToken,
+                resetPasswordExpires: { $gt: new Date() },
+            });
+            if (!user) {
+                throw new UserValidationError("Invalid or expired reset token");
+            }
+            const hashedPassword = await bcrypt_1.default.hash(newPassword, 10);
+            user.password = hashedPassword;
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpires = undefined;
+            await user.save();
+            return { message: "Password has been reset successfully" };
+        }
+        catch (error) {
+            if (error instanceof UserValidationError) {
+                throw error;
+            }
+            throw new Error(`Failed to reset password: ${error}`);
+        }
+    }
+    static async getProfile(userId) {
+        try {
+            const user = await user_model_1.UserModel.findById(userId).select("-password -resetPasswordToken -resetPasswordExpires -accessToken -refreshToken");
+            if (!user) {
+                throw new UserNotFoundError();
+            }
+            return user;
+        }
+        catch (error) {
+            if (error instanceof UserNotFoundError)
+                throw error;
+            throw new Error(`Failed to get profile: ${error}`);
+        }
+    }
+    static async updateProfile(userId, data) {
+        try {
+            const user = await user_model_1.UserModel.findByIdAndUpdate(userId, { $set: data }, { new: true, runValidators: true }).select("-password -resetPasswordToken -resetPasswordExpires -accessToken -refreshToken");
+            if (!user) {
+                throw new UserNotFoundError();
+            }
+            return user;
+        }
+        catch (error) {
+            if (error instanceof UserNotFoundError)
+                throw error;
+            throw new Error(`Failed to update profile: ${error}`);
+        }
+    }
+    static async changePassword(userId, currentPassword, newPassword) {
+        try {
+            const user = await user_model_1.UserModel.findById(userId);
+            if (!user) {
+                throw new UserNotFoundError();
+            }
+            const isValid = await bcrypt_1.default.compare(currentPassword, user.password);
+            if (!isValid) {
+                throw new UserValidationError("Current password is incorrect");
+            }
+            user.password = await bcrypt_1.default.hash(newPassword, 10);
+            await user.save();
+            return { message: "Password changed successfully" };
+        }
+        catch (error) {
+            if (error instanceof UserNotFoundError || error instanceof UserValidationError)
+                throw error;
+            throw new Error(`Failed to change password: ${error}`);
+        }
     }
 }
 exports.UserService = UserService;

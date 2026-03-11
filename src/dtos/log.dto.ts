@@ -43,11 +43,12 @@ export interface CreateLogDTO {
     | "pageview"
     | "web-vital"
     | "breadcrumb"
-    | "message";
+    | "message"
+    | "system";
   userAgent?: string;
   url?: string;
   referrer?: string;
-  responseTime?: number; // Phase 2.1: For performance tracking
+  ingestionLatency?: number; // Server-side log ingestion latency (ms)
   correlationId?: string; // Phase 2.1: For distributed tracing
   sessionId?: string; // Phase 2.1: For session grouping
   traceId?: string; // SDK Phase 2: Distributed tracing
@@ -77,7 +78,8 @@ export interface FilterLogsDTO {
     | "pageview"
     | "web-vital"
     | "breadcrumb"
-    | "message";
+    | "message"
+    | "system";
   userAgent?: string;
   url?: string;
   referrer?: string;

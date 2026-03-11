@@ -18,7 +18,7 @@ export interface ILog extends Document {
   environment?: string;
   context?: Record<string, any>;
   metadata?: any;
-  eventType?: 'error' | 'performance' | 'interaction' | 'network' | 'console' | 'pageview' | 'web-vital' | 'breadcrumb' | 'message';
+  eventType?: 'error' | 'performance' | 'interaction' | 'network' | 'console' | 'pageview' | 'web-vital' | 'breadcrumb' | 'message' | 'system';
   userAgent?: string;
   url?: string;
   referrer?: string;
@@ -31,7 +31,7 @@ export interface ILog extends Document {
   updatedAt?: Date;
   ingestionStartTime?: Date;
   ingestionEndTime?: Date;
-  responseTime?: number;
+  ingestionLatency?: number;
   ingestionSuccess?: boolean;
 }
 
@@ -83,7 +83,7 @@ const LogSchema: Schema = new Schema<ILog>(
     },
     eventType: {
       type: String,
-      enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview', 'web-vital', 'breadcrumb', 'message'],
+      enum: ['error', 'performance', 'interaction', 'network', 'console', 'pageview', 'web-vital', 'breadcrumb', 'message', 'system'],
       index: true, // Good for filtering by event type
     },
     userAgent: {
@@ -121,7 +121,7 @@ const LogSchema: Schema = new Schema<ILog>(
     ingestionEndTime: {
       type: Date,
     },
-    responseTime: {
+    ingestionLatency: {
       type: Number,
       min: 0,
     },
@@ -140,7 +140,6 @@ LogSchema.index({ projectId: 1, timestamp: -1 }); // Common query pattern
 LogSchema.index({ projectId: 1, level: 1 }); // Filter by project and log level
 LogSchema.index({ projectId: 1, eventType: 1 }); // Filter by project and event type
 LogSchema.index({ url: 1, timestamp: -1 }); // URL-based queries with recency
-LogSchema.index({ projectId: 1, responseTime: 1 }); // For response time queries
 LogSchema.index({ projectId: 1, ingestionEndTime: -1 }); // For recent response time analysis
 LogSchema.index({ correlationId: 1, timestamp: -1 }); // Distributed tracing queries
 LogSchema.index({ sessionId: 1, timestamp: -1 }); // Session-based queries

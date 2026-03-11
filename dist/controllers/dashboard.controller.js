@@ -1,15 +1,5 @@
 "use strict";
 // src/controllers/dashboard.controller.ts
-// @ts-nocheck
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dashboardValidation = exports.DashboardController = void 0;
 const dashboard_service_1 = require("../services/dashboard.service");
@@ -134,75 +124,78 @@ class DashboardController {
      * Get comprehensive dashboard metrics
      * GET /api/dashboard/metrics
      */
-    static getMetrics(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const errors = (0, express_validator_1.validationResult)(req);
-                if (!errors.isEmpty()) {
-                    return res.status(400).json({
-                        status: "error",
-                        errors: errors.array().map((err) => err.msg),
-                    });
-                }
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Dashboard metrics fetched successfully",
-                    data: metrics,
-                    filters,
-                    timestamp: new Date().toISOString(),
+    static async getMetrics(req, res) {
+        try {
+            const errors = (0, express_validator_1.validationResult)(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    status: "error",
+                    errors: errors.array().map((err) => err.msg),
                 });
             }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch dashboard metrics");
-            }
-        });
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            return res.status(200).json({
+                status: "success",
+                message: "Dashboard metrics fetched successfully",
+                data: metrics,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch dashboard metrics");
+        }
     }
     /**
      * Get real-time metrics for live dashboard
      * GET /api/dashboard/realtime
      */
-    static getRealTimeMetrics(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { specificProjectIds } = req.query;
-                const userId = req.userId;
-                const projectIdArray = specificProjectIds
-                    ? Array.isArray(specificProjectIds)
-                        ? specificProjectIds
-                        : [specificProjectIds]
-                    : undefined;
-                const metrics = yield dashboard_service_1.DashboardService.getRealTimeMetrics(userId, projectIdArray);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Real-time metrics fetched successfully",
-                    data: metrics,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch real-time metrics");
-            }
-        });
+    static async getRealTimeMetrics(req, res) {
+        try {
+            const { specificProjectIds } = req.query;
+            const userId = req.userId;
+            const projectIdArray = specificProjectIds
+                ? Array.isArray(specificProjectIds)
+                    ? specificProjectIds
+                    : [specificProjectIds]
+                : undefined;
+            const metrics = await dashboard_service_1.DashboardService.getRealTimeMetrics(userId, projectIdArray);
+            return res.status(200).json({
+                status: "success",
+                message: "Real-time metrics fetched successfully",
+                data: metrics,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch real-time metrics");
+        }
     }
     /**
      * Get dashboard overview (summary of all key metrics)
      * GET /api/dashboard/overview
+     *
+     * Query params:
+     *   includeComparison=true  — adds period-over-period comparison + sparklines
      */
-    static getOverview(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const [metrics, realTimeMetrics] = yield Promise.all([
-                    dashboard_service_1.DashboardService.getDashboardMetrics(filters),
+    static async getOverview(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const includeComparison = req.query.includeComparison === "true";
+            // When comparison requested, use the richer method that runs both periods
+            if (includeComparison) {
+                const [comparisonResult, realTimeMetrics] = await Promise.all([
+                    dashboard_service_1.DashboardService.getDashboardMetricsWithComparison(filters),
                     dashboard_service_1.DashboardService.getRealTimeMetrics(filters.userId, filters.specificProjectIds),
                 ]);
+                const metrics = comparisonResult.current;
                 const overview = {
                     summary: {
                         totalLogs: metrics.totalLogs,
                         totalProjects: metrics.totalProjects,
                         totalErrors: metrics.totalErrors,
+                        totalWarnings: metrics.totalWarnings,
                         errorRate: metrics.averageErrorRate,
                         averageResponseTime: metrics.averageResponseTime,
                     },
@@ -224,9 +217,19 @@ class DashboardController {
                             .slice(0, 3),
                     },
                     trends: {
-                        logVolumeChange: DashboardController.calculateTrendChange(metrics.logsOverTime, "total"),
-                        errorRateChange: DashboardController.calculateTrendChange(metrics.logsOverTime, "errors"),
+                        logVolumeChange: comparisonResult.comparison.totalLogs.change,
+                        errorRateChange: comparisonResult.comparison.errorRate.change,
                     },
+                    comparison: comparisonResult.comparison,
+                    sparklines: comparisonResult.sparklines,
+                    logsOverTime: metrics.logsOverTime,
+                    networkStats: metrics.networkStats,
+                    pageLoadTimes: metrics.pageLoadTimes,
+                    browserStats: metrics.browserStats,
+                    topErrors: metrics.topErrors,
+                    slowestEndpoints: metrics.slowestEndpoints,
+                    errorsByType: metrics.errorsByType,
+                    projectHealth: metrics.projectHealth,
                 };
                 return res.status(200).json({
                     status: "success",
@@ -236,10 +239,61 @@ class DashboardController {
                     timestamp: new Date().toISOString(),
                 });
             }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch dashboard overview");
-            }
-        });
+            // Legacy path (no comparison) — kept for backward compatibility
+            const [metrics, realTimeMetrics] = await Promise.all([
+                dashboard_service_1.DashboardService.getDashboardMetrics(filters),
+                dashboard_service_1.DashboardService.getRealTimeMetrics(filters.userId, filters.specificProjectIds),
+            ]);
+            const overview = {
+                summary: {
+                    totalLogs: metrics.totalLogs,
+                    totalProjects: metrics.totalProjects,
+                    totalErrors: metrics.totalErrors,
+                    totalWarnings: metrics.totalWarnings,
+                    errorRate: metrics.averageErrorRate,
+                    averageResponseTime: metrics.averageResponseTime,
+                },
+                realTime: {
+                    currentRPS: realTimeMetrics.currentRPS,
+                    currentErrorRate: realTimeMetrics.currentErrorRate,
+                    activeUsers: realTimeMetrics.activeUsers,
+                },
+                health: {
+                    healthyProjects: metrics.projectHealth.filter((p) => p.healthScore >= 80).length,
+                    warningProjects: metrics.projectHealth.filter((p) => p.healthScore >= 60 && p.healthScore < 80).length,
+                    criticalProjects: metrics.projectHealth.filter((p) => p.healthScore < 60).length,
+                },
+                topIssues: {
+                    mostFrequentError: metrics.topErrors[0] || null,
+                    slowestEndpoint: metrics.slowestEndpoints[0] || null,
+                    recentCriticalErrors: realTimeMetrics.recentErrors
+                        .filter((e) => e.severity === "fatal")
+                        .slice(0, 3),
+                },
+                trends: {
+                    logVolumeChange: 0,
+                    errorRateChange: 0,
+                },
+                logsOverTime: metrics.logsOverTime,
+                networkStats: metrics.networkStats,
+                pageLoadTimes: metrics.pageLoadTimes,
+                browserStats: metrics.browserStats,
+                topErrors: metrics.topErrors,
+                slowestEndpoints: metrics.slowestEndpoints,
+                errorsByType: metrics.errorsByType,
+                projectHealth: metrics.projectHealth,
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "Dashboard overview fetched successfully",
+                data: overview,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch dashboard overview");
+        }
     }
     // =============================================================================
     // SPECIALIZED ANALYTICS ENDPOINTS
@@ -248,255 +302,243 @@ class DashboardController {
      * Get user analytics
      * GET /api/dashboard/analytics/users
      */
-    static getUserAnalytics(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                const userAnalytics = {
-                    browserStats: metrics.browserStats,
-                    topErrors: metrics.topErrors.map((error) => ({
-                        message: error.message,
-                        affectedUsers: error.affectedUsers,
-                        count: error.count,
-                    })),
-                    pageViews: metrics.pageLoadTimes.length,
-                    performanceImpact: {
-                        slowPages: metrics.pageLoadTimes.filter((p) => p.averageTime > 3000)
-                            .length,
-                        totalPages: metrics.pageLoadTimes.length,
-                    },
-                };
-                return res.status(200).json({
-                    status: "success",
-                    message: "User analytics fetched successfully",
-                    data: userAnalytics,
-                    filters,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch user analytics");
-            }
-        });
+    static async getUserAnalytics(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            const userAnalytics = {
+                browserStats: metrics.browserStats,
+                topErrors: metrics.topErrors.map((error) => ({
+                    message: error.message,
+                    affectedUsers: error.affectedUsers,
+                    count: error.count,
+                })),
+                pageViews: metrics.pageLoadTimes.length,
+                performanceImpact: {
+                    slowPages: metrics.pageLoadTimes.filter((p) => p.averageTime > 3000)
+                        .length,
+                    totalPages: metrics.pageLoadTimes.length,
+                },
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "User analytics fetched successfully",
+                data: userAnalytics,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch user analytics");
+        }
     }
     /**
      * Get time series data
      * GET /api/dashboard/timeseries
      */
-    static getTimeSeriesData(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                const timeSeriesData = {
-                    logsOverTime: metrics.logsOverTime,
-                    summary: {
-                        totalDataPoints: metrics.logsOverTime.length,
-                        peakTime: metrics.logsOverTime.reduce((peak, current) => (current.total > peak.total ? current : peak), { total: 0, timestamp: new Date() }),
-                        averageLogsPerPeriod: metrics.logsOverTime.length > 0
-                            ? metrics.logsOverTime.reduce((sum, point) => sum + point.total, 0) / metrics.logsOverTime.length
-                            : 0,
-                    },
-                };
-                return res.status(200).json({
-                    status: "success",
-                    message: "Time series data fetched successfully",
-                    data: timeSeriesData,
-                    filters,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch time series data");
-            }
-        });
+    static async getTimeSeriesData(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            const timeSeriesData = {
+                logsOverTime: metrics.logsOverTime,
+                summary: {
+                    totalDataPoints: metrics.logsOverTime.length,
+                    peakTime: metrics.logsOverTime.reduce((peak, current) => (current.total > peak.total ? current : peak), { total: 0, timestamp: new Date() }),
+                    averageLogsPerPeriod: metrics.logsOverTime.length > 0
+                        ? metrics.logsOverTime.reduce((sum, point) => sum + point.total, 0) / metrics.logsOverTime.length
+                        : 0,
+                },
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "Time series data fetched successfully",
+                data: timeSeriesData,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch time series data");
+        }
     }
     /**
      * Get error analysis
      * GET /api/dashboard/errors
      */
-    static getErrorAnalysis(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                // Force error levels for this endpoint
-                filters.logLevels = ["error", "fatal"];
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                const errorAnalysis = {
-                    totalErrors: metrics.totalErrors,
-                    errorRate: metrics.averageErrorRate,
-                    errorsByType: metrics.errorsByType,
-                    topErrors: metrics.topErrors,
-                    errorTrend: metrics.logsOverTime.map((point) => ({
-                        timestamp: point.timestamp,
-                        errors: point.errors,
-                    })),
-                };
-                return res.status(200).json({
-                    status: "success",
-                    message: "Error analysis fetched successfully",
-                    data: errorAnalysis,
-                    filters,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch error analysis");
-            }
-        });
+    static async getErrorAnalysis(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            // Force error levels for this endpoint
+            filters.logLevels = ["error", "fatal"];
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            const errorAnalysis = {
+                totalErrors: metrics.totalErrors,
+                errorRate: metrics.averageErrorRate,
+                errorsByType: metrics.errorsByType,
+                topErrors: metrics.topErrors,
+                errorTrend: metrics.logsOverTime.map((point) => ({
+                    timestamp: point.timestamp,
+                    errors: point.errors,
+                })),
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "Error analysis fetched successfully",
+                data: errorAnalysis,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch error analysis");
+        }
     }
     /**
      * Get performance metrics
      * GET /api/dashboard/performance
      */
-    static getPerformanceMetrics(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                const performanceMetrics = {
-                    averageResponseTime: metrics.averageResponseTime,
-                    p95ResponseTime: metrics.p95ResponseTime,
-                    p99ResponseTime: metrics.p99ResponseTime,
-                    slowestEndpoints: metrics.slowestEndpoints,
-                    pageLoadTimes: metrics.pageLoadTimes,
-                    networkStats: metrics.networkStats,
-                };
-                return res.status(200).json({
-                    status: "success",
-                    message: "Performance metrics fetched successfully",
-                    data: performanceMetrics,
-                    filters,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch performance metrics");
-            }
-        });
+    static async getPerformanceMetrics(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            const performanceMetrics = {
+                averageResponseTime: metrics.averageResponseTime,
+                p95ResponseTime: metrics.p95ResponseTime,
+                p99ResponseTime: metrics.p99ResponseTime,
+                slowestEndpoints: metrics.slowestEndpoints,
+                pageLoadTimes: metrics.pageLoadTimes,
+                networkStats: metrics.networkStats,
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "Performance metrics fetched successfully",
+                data: performanceMetrics,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch performance metrics");
+        }
     }
     /**
      * Get project health overview
      * GET /api/dashboard/projects/health
      */
-    static getProjectHealth(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const metrics = yield dashboard_service_1.DashboardService.getDashboardMetrics(filters);
-                const projectHealthData = {
-                    totalProjects: metrics.totalProjects,
-                    averageLogsPerProject: metrics.averageLogsPerProject,
-                    projectHealth: metrics.projectHealth,
-                    healthSummary: {
-                        healthy: metrics.projectHealth.filter((p) => p.healthScore >= 80)
-                            .length,
-                        warning: metrics.projectHealth.filter((p) => p.healthScore >= 60 && p.healthScore < 80).length,
-                        critical: metrics.projectHealth.filter((p) => p.healthScore < 60)
-                            .length,
-                    },
-                };
-                return res.status(200).json({
-                    status: "success",
-                    message: "Project health data fetched successfully",
-                    data: projectHealthData,
-                    filters,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch project health");
-            }
-        });
+    static async getProjectHealth(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const metrics = await dashboard_service_1.DashboardService.getDashboardMetrics(filters);
+            const projectHealthData = {
+                totalProjects: metrics.totalProjects,
+                averageLogsPerProject: metrics.averageLogsPerProject,
+                projectHealth: metrics.projectHealth,
+                healthSummary: {
+                    healthy: metrics.projectHealth.filter((p) => p.healthScore >= 80)
+                        .length,
+                    warning: metrics.projectHealth.filter((p) => p.healthScore >= 60 && p.healthScore < 80).length,
+                    critical: metrics.projectHealth.filter((p) => p.healthScore < 60)
+                        .length,
+                },
+            };
+            return res.status(200).json({
+                status: "success",
+                message: "Project health data fetched successfully",
+                data: projectHealthData,
+                filters,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch project health");
+        }
     }
     /**
      * Get alerts and notifications
      * GET /api/dashboard/alerts
      */
-    static getAlerts(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const filters = DashboardController.buildFiltersFromRequest(req);
-                const [metrics, realTimeMetrics] = yield Promise.all([
-                    dashboard_service_1.DashboardService.getDashboardMetrics(filters),
-                    dashboard_service_1.DashboardService.getRealTimeMetrics(filters.userId, filters.specificProjectIds),
-                ]);
-                const alerts = [];
-                // High error rate alert
-                if (metrics.averageErrorRate > 10) {
-                    alerts.push({
-                        type: "critical",
-                        title: "High Error Rate Detected",
-                        message: `Current error rate is ${metrics.averageErrorRate.toFixed(2)}% (threshold: 10%)`,
-                        timestamp: new Date(),
-                        metadata: { errorRate: metrics.averageErrorRate },
-                    });
-                }
-                // Slow response time alert
-                if (metrics.averageResponseTime > 3000) {
-                    alerts.push({
-                        type: "warning",
-                        title: "Slow Response Times",
-                        message: `Average response time is ${metrics.averageResponseTime.toFixed(0)}ms (threshold: 3000ms)`,
-                        timestamp: new Date(),
-                        metadata: { responseTime: metrics.averageResponseTime },
-                    });
-                }
-                // Recent fatal errors
-                realTimeMetrics.recentErrors
-                    .filter((error) => error.severity === "fatal")
-                    .forEach((error) => {
-                    alerts.push({
-                        type: "critical",
-                        title: "Fatal Error Detected",
-                        message: error.message,
-                        timestamp: error.timestamp,
-                        metadata: { projectId: error.projectId, severity: error.severity },
-                    });
+    static async getAlerts(req, res) {
+        try {
+            const filters = DashboardController.buildFiltersFromRequest(req);
+            const [metrics, realTimeMetrics] = await Promise.all([
+                dashboard_service_1.DashboardService.getDashboardMetrics(filters),
+                dashboard_service_1.DashboardService.getRealTimeMetrics(filters.userId, filters.specificProjectIds),
+            ]);
+            const alerts = [];
+            // High error rate alert
+            if (metrics.averageErrorRate > 10) {
+                alerts.push({
+                    type: "critical",
+                    title: "High Error Rate Detected",
+                    message: `Current error rate is ${metrics.averageErrorRate.toFixed(2)}% (threshold: 10%)`,
+                    timestamp: new Date(),
+                    metadata: { errorRate: metrics.averageErrorRate },
                 });
-                // Unhealthy projects
-                metrics.projectHealth
-                    .filter((project) => project.healthScore < 60)
-                    .forEach((project) => {
-                    alerts.push({
-                        type: "warning",
-                        title: "Unhealthy Project",
-                        message: `Project "${project.projectName}" has low health score: ${project.healthScore}/100`,
-                        timestamp: new Date(),
-                        metadata: {
-                            projectId: project.projectId,
-                            healthScore: project.healthScore,
-                        },
-                    });
+            }
+            // Slow response time alert
+            if (metrics.averageResponseTime > 3000) {
+                alerts.push({
+                    type: "warning",
+                    title: "Slow Response Times",
+                    message: `Average response time is ${metrics.averageResponseTime.toFixed(0)}ms (threshold: 3000ms)`,
+                    timestamp: new Date(),
+                    metadata: { responseTime: metrics.averageResponseTime },
                 });
-                // Sort alerts by severity and timestamp
-                alerts.sort((a, b) => {
-                    const severityOrder = { critical: 3, warning: 2, info: 1 };
-                    const severityDiff = (severityOrder[b.type] || 0) -
-                        (severityOrder[a.type] || 0);
-                    if (severityDiff !== 0)
-                        return severityDiff;
-                    return (new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            }
+            // Recent fatal errors
+            realTimeMetrics.recentErrors
+                .filter((error) => error.severity === "fatal")
+                .forEach((error) => {
+                alerts.push({
+                    type: "critical",
+                    title: "Fatal Error Detected",
+                    message: error.message,
+                    timestamp: error.timestamp,
+                    metadata: { projectId: error.projectId, severity: error.severity },
                 });
-                return res.status(200).json({
-                    status: "success",
-                    message: "Alerts fetched successfully",
-                    data: {
-                        alerts: alerts.slice(0, 20), // Limit to 20 most important alerts
-                        summary: {
-                            critical: alerts.filter((a) => a.type === "critical").length,
-                            warning: alerts.filter((a) => a.type === "warning").length,
-                            info: alerts.filter((a) => a.type === "info").length,
-                        },
+            });
+            // Unhealthy projects
+            metrics.projectHealth
+                .filter((project) => project.healthScore < 60)
+                .forEach((project) => {
+                alerts.push({
+                    type: "warning",
+                    title: "Unhealthy Project",
+                    message: `Project "${project.projectName}" has low health score: ${project.healthScore}/100`,
+                    timestamp: new Date(),
+                    metadata: {
+                        projectId: project.projectId,
+                        healthScore: project.healthScore,
                     },
-                    timestamp: new Date().toISOString(),
                 });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch alerts");
-            }
-        });
+            });
+            // Sort alerts by severity and timestamp
+            alerts.sort((a, b) => {
+                const severityOrder = { critical: 3, warning: 2, info: 1 };
+                const severityDiff = (severityOrder[b.type] || 0) -
+                    (severityOrder[a.type] || 0);
+                if (severityDiff !== 0)
+                    return severityDiff;
+                return (new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            });
+            return res.status(200).json({
+                status: "success",
+                message: "Alerts fetched successfully",
+                data: {
+                    alerts: alerts.slice(0, 20), // Limit to 20 most important alerts
+                    summary: {
+                        critical: alerts.filter((a) => a.type === "critical").length,
+                        warning: alerts.filter((a) => a.type === "warning").length,
+                        info: alerts.filter((a) => a.type === "info").length,
+                    },
+                },
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch alerts");
+        }
     }
     // =============================================================================
     // DATA EXPORT AND IMPORT
@@ -505,47 +547,45 @@ class DashboardController {
      * Export dashboard data
      * POST /api/dashboard/export
      */
-    static exportData(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const errors = (0, express_validator_1.validationResult)(req);
-                if (!errors.isEmpty()) {
-                    return res.status(400).json({
-                        status: "error",
-                        errors: errors.array().map((err) => err.msg),
-                    });
-                }
-                const filters = DashboardController.buildFiltersFromBody(req);
-                const { format = "json" } = req.body;
-                const exportData = yield dashboard_service_1.DashboardService.exportDashboardData(filters);
-                // Set appropriate headers for file download
-                const timestamp = new Date().toISOString().split("T")[0];
-                const filename = `dashboard-export-${timestamp}.${format}`;
-                if (format === "csv") {
-                    res.setHeader("Content-Type", "text/csv");
-                    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-                    return res.send(DashboardController.convertToCSV(exportData));
-                }
-                else {
-                    res.setHeader("Content-Type", "application/json");
-                    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-                    return res.status(200).json({
-                        status: "success",
-                        message: "Dashboard data exported successfully",
-                        data: exportData,
-                        meta: {
-                            filename,
-                            exportedAt: new Date(),
-                            format,
-                        },
-                        timestamp: new Date().toISOString(),
-                    });
-                }
+    static async exportData(req, res) {
+        try {
+            const errors = (0, express_validator_1.validationResult)(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    status: "error",
+                    errors: errors.array().map((err) => err.msg),
+                });
             }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to export dashboard data");
+            const filters = DashboardController.buildFiltersFromBody(req);
+            const { format = "json" } = req.body;
+            const exportData = await dashboard_service_1.DashboardService.exportDashboardData(filters);
+            // Set appropriate headers for file download
+            const timestamp = new Date().toISOString().split("T")[0];
+            const filename = `dashboard-export-${timestamp}.${format}`;
+            if (format === "csv") {
+                res.setHeader("Content-Type", "text/csv");
+                res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+                return res.send(DashboardController.convertToCSV(exportData));
             }
-        });
+            else {
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+                return res.status(200).json({
+                    status: "success",
+                    message: "Dashboard data exported successfully",
+                    data: exportData,
+                    meta: {
+                        filename,
+                        exportedAt: new Date(),
+                        format,
+                    },
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to export dashboard data");
+        }
     }
     // =============================================================================
     // USER PROJECT MANAGEMENT
@@ -554,26 +594,24 @@ class DashboardController {
      * Get user's project list with basic health info
      * GET /api/dashboard/projects
      */
-    static getUserProjects(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const userId = req.userId;
-                const projectList = yield dashboard_service_1.DashboardService.getUserProjectList(userId);
-                return res.status(200).json({
-                    status: "success",
-                    message: "User projects fetched successfully",
-                    data: projectList,
-                    meta: {
-                        totalProjects: projectList.length,
-                        activeProjects: projectList.filter((p) => p.isActive).length,
-                    },
-                    timestamp: new Date().toISOString(),
-                });
-            }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch user projects");
-            }
-        });
+    static async getUserProjects(req, res) {
+        try {
+            const userId = req.userId;
+            const projectList = await dashboard_service_1.DashboardService.getUserProjectList(userId);
+            return res.status(200).json({
+                status: "success",
+                message: "User projects fetched successfully",
+                data: projectList,
+                meta: {
+                    totalProjects: projectList.length,
+                    activeProjects: projectList.filter((p) => p.isActive).length,
+                },
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch user projects");
+        }
     }
     // =============================================================================
     // ADMIN FUNCTIONS - MULTI-USER ANALYTICS
@@ -584,48 +622,46 @@ class DashboardController {
      *
      * Body: { userIds: string[], filters: { timeRange, environment?, logLevels? } }
      */
-    static getMultiUserMetrics(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { userIds, filters } = req.body;
-                if (!Array.isArray(userIds) || userIds.length === 0) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Array of user IDs is required",
-                    });
-                }
-                if (userIds.length > 100) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Cannot analyze more than 100 users at once",
-                    });
-                }
-                if (!filters || !filters.timeRange) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Filters with timeRange are required",
-                    });
-                }
-                const normalizedFilters = {
-                    timeRange: {
-                        start: new Date(filters.timeRange.start),
-                        end: new Date(filters.timeRange.end),
-                    },
-                    environment: filters.environment,
-                    logLevels: filters.logLevels,
-                };
-                const multiUserMetrics = yield dashboard_service_1.DashboardService.getMultiUserMetrics(userIds, normalizedFilters);
-                return res.status(200).json({
-                    status: "success",
-                    message: "Multi-user metrics fetched successfully",
-                    data: multiUserMetrics,
-                    timestamp: new Date().toISOString(),
+    static async getMultiUserMetrics(req, res) {
+        try {
+            const { userIds, filters } = req.body;
+            if (!Array.isArray(userIds) || userIds.length === 0) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Array of user IDs is required",
                 });
             }
-            catch (error) {
-                return DashboardController.handleError(error, res, "Failed to fetch multi-user metrics");
+            if (userIds.length > 100) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Cannot analyze more than 100 users at once",
+                });
             }
-        });
+            if (!filters || !filters.timeRange) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Filters with timeRange are required",
+                });
+            }
+            const normalizedFilters = {
+                timeRange: {
+                    start: new Date(filters.timeRange.start),
+                    end: new Date(filters.timeRange.end),
+                },
+                environment: filters.environment,
+                logLevels: filters.logLevels,
+            };
+            const multiUserMetrics = await dashboard_service_1.DashboardService.getMultiUserMetrics(userIds, normalizedFilters);
+            return res.status(200).json({
+                status: "success",
+                message: "Multi-user metrics fetched successfully",
+                data: multiUserMetrics,
+                timestamp: new Date().toISOString(),
+            });
+        }
+        catch (error) {
+            return DashboardController.handleError(error, res, "Failed to fetch multi-user metrics");
+        }
     }
     // =============================================================================
     // HEALTH CHECK
@@ -634,34 +670,32 @@ class DashboardController {
      * Dashboard service health check
      * GET /api/dashboard/health
      */
-    static healthCheck(req, res) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const healthStatus = yield dashboard_service_1.DashboardService.healthCheck();
-                if (healthStatus.status === "healthy") {
-                    return res.status(200).json({
-                        status: "success",
-                        message: "Dashboard service is healthy",
-                        data: healthStatus.metrics,
-                    });
-                }
-                else {
-                    return res.status(503).json({
-                        status: "error",
-                        message: "Dashboard service is unhealthy",
-                        errors: [healthStatus.error || "Unknown health issue"],
-                        data: healthStatus.metrics,
-                    });
-                }
-            }
-            catch (error) {
-                return res.status(500).json({
-                    status: "error",
-                    message: "Failed to perform health check due to an unexpected error",
-                    errors: [error.message],
+    static async healthCheck(req, res) {
+        try {
+            const healthStatus = await dashboard_service_1.DashboardService.healthCheck();
+            if (healthStatus.status === "healthy") {
+                return res.status(200).json({
+                    status: "success",
+                    message: "Dashboard service is healthy",
+                    data: healthStatus.metrics,
                 });
             }
-        });
+            else {
+                return res.status(503).json({
+                    status: "error",
+                    message: "Dashboard service is unhealthy",
+                    errors: [healthStatus.error || "Unknown health issue"],
+                    data: healthStatus.metrics,
+                });
+            }
+        }
+        catch (error) {
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to perform health check due to an unexpected error",
+                errors: [error.message],
+            });
+        }
     }
     // =============================================================================
     // HELPER METHODS
@@ -684,19 +718,6 @@ class DashboardController {
         })
             .join(","));
         return csvRows.join("\n");
-    }
-    static calculateTrendChange(timeSeriesData, field) {
-        if (timeSeriesData.length < 2)
-            return 0;
-        const recent = timeSeriesData
-            .slice(-3)
-            .reduce((sum, item) => sum + (item[field] || 0), 0) / 3;
-        const previous = timeSeriesData
-            .slice(0, 3)
-            .reduce((sum, item) => sum + (item[field] || 0), 0) / 3;
-        if (previous === 0)
-            return 0;
-        return ((recent - previous) / previous) * 100;
     }
 }
 exports.DashboardController = DashboardController;

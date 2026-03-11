@@ -27,6 +27,7 @@ export const eventTypeSchema = z.enum([
   "web-vital",
   "breadcrumb",
   "message",
+  "system",
 ]);
 
 /**
@@ -70,7 +71,7 @@ export const createLogSchema = z
     userAgent: z.string().max(500).optional(),
     url: z.string().url().optional().or(z.literal("")),
     referrer: z.string().url().optional().or(z.literal("")),
-    responseTime: z.number().min(0).optional(),
+    ingestionLatency: z.number().min(0).optional(),
     correlationId: z.string().max(100).optional(),
     sessionId: z.string().max(100).optional(),
     traceId: z.string().max(100).optional(),

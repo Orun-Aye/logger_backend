@@ -392,7 +392,7 @@ export class DashboardService {
   private static async getErrorStatistics(baseQuery: any) {
     try {
       const [errorResults] = await LogModel.aggregate([
-        { $match: baseQuery },
+        { $match: { ...baseQuery, eventType: { $ne: 'system' } } },
         {
           $group: {
             _id: null,
@@ -408,12 +408,13 @@ export class DashboardService {
 
       // Get errors by type
       const errorsByType = await LogModel.aggregate([
-        { 
-          $match: { 
-            ...baseQuery, 
+        {
+          $match: {
+            ...baseQuery,
             level: { $in: ['error', 'fatal'] },
-            'error.name': { $exists: true }
-          } 
+            'error.name': { $exists: true },
+            eventType: { $ne: 'system' }
+          }
         },
         {
           $group: {

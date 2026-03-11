@@ -168,7 +168,7 @@ export class LogService {
       }
 
       const ingestionEndTime = new Date();
-      const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+      const ingestionLatency = ingestionEndTime.getTime() - ingestionStartTime.getTime();
 
       // Prepare log data, ensuring timestamp is an ISO string
       const newLogData: Partial<ILog> = {
@@ -178,7 +178,7 @@ export class LogService {
           : new Date().toISOString(),
         ingestionStartTime,
         ingestionEndTime,
-        responseTime,
+        ingestionLatency,
         ingestionSuccess: true,
       };
 
@@ -205,7 +205,7 @@ export class LogService {
         !(error instanceof LogValidationError)
       ) {
         const ingestionEndTime = new Date();
-        const responseTime = ingestionEndTime.getTime() - ingestionStartTime.getTime();
+        const ingestionLatency = ingestionEndTime.getTime() - ingestionStartTime.getTime();
         try {
           await LogModel.create({
             projectId: data.projectId,
@@ -216,10 +216,10 @@ export class LogService {
               name: error instanceof Error ? error.constructor.name : 'UnknownError',
               message: error instanceof Error ? error.message : 'Unknown error occurred',
             },
-            eventType: 'error',
+            eventType: 'system',
             ingestionStartTime,
             ingestionEndTime,
-            responseTime,
+            ingestionLatency,
             ingestionSuccess: false,
             data: { originalLogData: data }
           });
@@ -1000,7 +1000,7 @@ export class LogService {
               "eventType",
               "url",
               "userAgent",
-              "responseTime",
+              "ingestionLatency",
               "error.name",
               "error.message",
               "error.stack",
@@ -1038,7 +1038,7 @@ export class LogService {
             escape(doc.eventType),
             escape(doc.url),
             escape(doc.userAgent),
-            escape(doc.responseTime),
+            escape(doc.ingestionLatency),
             escape(doc.error?.name),
             escape(doc.error?.message),
             escape(doc.error?.stack),
