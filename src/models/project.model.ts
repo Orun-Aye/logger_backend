@@ -34,6 +34,8 @@ export interface IProject extends Document {
     value: number;
     alwaysKeepLevels: string[];
   };
+  archivedAt?: Date;
+  archiveReason?: string;
   organizationId?: Types.ObjectId;
   createdAt: Date;
   updatedAt?: Date;
@@ -79,6 +81,8 @@ const ProjectSchema: Schema<IProject> = new Schema(
       value: { type: Number, default: 100, min: 1, max: 1000 },
       alwaysKeepLevels: { type: [String], default: ["error", "fatal"] },
     },
+    archivedAt: { type: Date },
+    archiveReason: { type: String },
     organizationId: { type: Schema.Types.ObjectId, ref: "Organization" },
   },
   {
