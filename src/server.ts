@@ -57,6 +57,8 @@ import adminRoutes from "./routes/admin.routes";
 import billingRoutes from "./routes/billing.routes";
 // Public pages (status, changelog — no auth)
 import publicRoutes from "./routes/public.routes";
+// Waitlist (public, no auth)
+import waitlistRoutes from "./routes/waitlist.routes";
 
 // Services
 import { DashboardWebSocketService } from "./services/websocket.service";
@@ -510,6 +512,9 @@ app.use("/api/v1", healthRoutes);
 
 // Public pages (status, changelog — open CORS, no auth)
 app.use("/api/v1/public", logIngestionCors, publicRoutes);
+
+// Waitlist (public, open CORS, no auth)
+app.use("/api/v1/waitlist", logIngestionCors, waitlistRoutes);
 
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, userRoutes);
