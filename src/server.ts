@@ -96,7 +96,7 @@ const logIngestionCors = cors({
 app.options("/{*path}", cors({ origin: true, credentials: true }));
 
 // Phase 1.3 Global Middleware (order matters!)
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(requestIdMiddleware);
 app.use(conditionalRequestLogger);
 
