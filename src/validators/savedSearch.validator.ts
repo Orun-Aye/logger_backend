@@ -15,7 +15,7 @@ const filtersSchema = z.object({
   services: z.array(z.string()).optional(),
   environments: z.array(z.string()).optional(),
   eventTypes: z
-    .array(z.enum(["error", "performance", "interaction", "network", "console", "pageview"]))
+    .array(z.enum(["error", "performance", "interaction", "network", "console", "pageview", "web-vital", "breadcrumb", "message", "system"]))
     .optional(),
   search: z.string().max(500).optional(),
   timeRange: timeRangeSchema.optional(),
@@ -68,13 +68,16 @@ export const batchLogSchema = z.object({
         context: z.record(z.any()).optional(),
         metadata: z.any().optional(),
         eventType: z
-          .enum(["error", "performance", "interaction", "network", "console", "pageview"])
+          .enum(["error", "performance", "interaction", "network", "console", "pageview", "web-vital", "breadcrumb", "message", "system"])
           .optional(),
         userAgent: z.string().max(500).optional(),
         url: z.string().max(2000).optional(),
         referrer: z.string().max(2000).optional(),
         correlationId: z.string().max(100).optional(),
         sessionId: z.string().max(100).optional(),
+        traceId: z.string().max(100).optional(),
+        spanId: z.string().max(100).optional(),
+        release: z.string().max(100).optional(),
       })
     )
     .min(1)
