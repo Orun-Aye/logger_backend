@@ -513,7 +513,9 @@ app.use("/api/v1", healthRoutes);
 // Public pages (status, changelog — open CORS, no auth)
 app.use("/api/v1/public", logIngestionCors, publicRoutes);
 
-// Waitlist (public, open CORS, no auth)
+// Waitlist (public POST + validate, admin GET/PUT/POST for management)
+// Uses logIngestionCors to allow public join + invite validation from any origin
+// Admin endpoints are protected by verifyToken + requireAdmin within the routes
 app.use("/api/v1/waitlist", logIngestionCors, waitlistRoutes);
 
 // Apply restricted CORS to admin/dashboard routes

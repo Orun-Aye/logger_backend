@@ -7,6 +7,7 @@ export interface CreateUserDTO {
     oauthProvider?: string;
     oauthId?: string;
     avatarUrl?: string;
+    inviteCode?: string;
 }
 
 export interface LoginUserDTO {

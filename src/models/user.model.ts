@@ -22,6 +22,11 @@ export interface IUser extends Document {
     mfaEnabled: boolean;
     mfaSecret?: string;
     mfaBackupCodes: string[];
+
+    // Beta access
+    betaAccess: boolean;
+    betaTier: "core" | "full";
+    inviteCode?: string;
 }
 
 const UserSchema: Schema<IUser> = new Schema({
@@ -48,6 +53,11 @@ const UserSchema: Schema<IUser> = new Schema({
     mfaEnabled: { type: Boolean, default: false },
     mfaSecret: { type: String },
     mfaBackupCodes: [{ type: String }],
+
+    // Beta access
+    betaAccess: { type: Boolean, default: false },
+    betaTier: { type: String, enum: ["core", "full"], default: "core" },
+    inviteCode: { type: String },
 }, {
     timestamps: true,
 })
