@@ -160,7 +160,7 @@ export class OAuthService {
         if (info.avatarUrl && !user.avatarUrl) user.avatarUrl = info.avatarUrl;
         await user.save();
       } else {
-        // Create new user
+        // Create new user with beta access (OAuth signup requires invite code on frontend)
         user = new UserModel({
           email: info.email.toLowerCase(),
           firstName: info.firstName,
@@ -169,6 +169,8 @@ export class OAuthService {
           oauthId: info.oauthId,
           avatarUrl: info.avatarUrl,
           role: "developer",
+          betaAccess: true,
+          betaTier: "core",
         });
         await user.save();
       }
@@ -180,7 +182,16 @@ export class OAuthService {
       }
     }
 
-    const token = jwt.sign({ userId: user._id }, secret, { expiresIn: "10h" });
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+        betaAccess: user.betaAccess,
+        betaTier: user.betaTier,
+      },
+      secret,
+      { expiresIn: "10h" }
+    );
 
     return {
       _id: user._id,
@@ -190,6 +201,8 @@ export class OAuthService {
       role: user.role,
       avatarUrl: user.avatarUrl,
       oauthProvider: user.oauthProvider,
+      betaAccess: user.betaAccess,
+      betaTier: user.betaTier,
       token,
       joinedAt: user.joinedAt,
     };
