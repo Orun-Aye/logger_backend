@@ -274,7 +274,7 @@ router.put(
 
       return res.status(200).json({
         status: "success",
-        message: "Entry approved. Invite code generated.",
+        message: "Entry approved. Use /send-invite to email the invite code.",
         data: {
           email: entry.email,
           inviteCode: entry.inviteCode,
@@ -354,6 +354,7 @@ router.post(
         entry.inviteCode = generateInviteCode();
         entry.approvedAt = new Date();
         await entry.save();
+
         results.push({ email: entry.email, inviteCode: entry.inviteCode });
       }
 
@@ -370,6 +371,159 @@ router.post(
     }
   }
 );
+
+// ─── Shared: Build invite email HTML ────────────────────────────────────────
+
+function buildInviteEmailHtml(inviteCode: string, signupUrl: string): string {
+  const year = new Date().getFullYear();
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#030711;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:560px;margin:0 auto;background:#060b14;">
+
+    <!-- Header -->
+    <div style="padding:40px 32px 24px;text-align:center;border-bottom:1px solid #111c2e;">
+      <div style="display:inline-block;margin-bottom:12px;">
+        <svg width="32" height="32" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 20L4 16L8 12L12 18L18 8L22 14L24 10" stroke="#00d97e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="4" cy="20" r="2" fill="#00d97e"/><circle cx="24" cy="10" r="2" fill="#00d97e"/>
+        </svg>
+      </div>
+      <h1 style="color:#00d97e;font-size:24px;font-weight:700;margin:0 0 2px;letter-spacing:-0.02em;">Apperio</h1>
+      <p style="color:#4e6484;font-size:12px;margin:0;text-transform:uppercase;letter-spacing:1.5px;">Early Access</p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:32px;">
+
+      <!-- Welcome -->
+      <h2 style="color:#e8f0fe;font-size:22px;font-weight:600;margin:0 0 16px;">Thank you for signing up.</h2>
+      <p style="color:#8da4c4;font-size:14px;line-height:1.7;margin:0 0 28px;">
+        We're excited to have you on board. Your early access to Apperio is confirmed.
+        Use the code below to create your account and start uncovering what's happening inside your applications.
+      </p>
+
+      <!-- Invite Code Box -->
+      <div style="background:#0b1220;border:1px solid #1a2640;border-radius:10px;padding:24px;text-align:center;margin:0 0 28px;">
+        <p style="color:#4e6484;font-size:11px;margin:0 0 10px;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">Your invite code</p>
+        <p style="color:#00d97e;font-size:32px;font-weight:700;font-family:'Courier New',monospace;margin:0;letter-spacing:3px;">${inviteCode}</p>
+      </div>
+
+      <!-- CTA Button -->
+      <div style="text-align:center;margin:0 0 32px;">
+        <a href="${signupUrl}" style="display:inline-block;background:#00d97e;color:#060b14;font-weight:700;font-size:15px;padding:14px 40px;border-radius:8px;text-decoration:none;letter-spacing:-0.01em;">
+          Create Your Account &rarr;
+        </a>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid #111c2e;margin:0 0 28px;"></div>
+
+      <!-- What you get -->
+      <p style="color:#e8f0fe;font-size:14px;font-weight:600;margin:0 0 12px;">What you get with early access:</p>
+      <table style="width:100%;border-collapse:collapse;margin:0 0 28px;" role="presentation">
+        <tr>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;vertical-align:top;width:24px;">
+            <span style="color:#00d97e;">&#10003;</span>
+          </td>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;">Real-time log monitoring and error tracking</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;vertical-align:top;">
+            <span style="color:#00d97e;">&#10003;</span>
+          </td>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;">Performance metrics and interactive dashboards</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;vertical-align:top;">
+            <span style="color:#00d97e;">&#10003;</span>
+          </td>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;">Alert rules with Slack, email, and webhook notifications</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;vertical-align:top;">
+            <span style="color:#00d97e;">&#10003;</span>
+          </td>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;">Auto-instrumentation SDK -- one line of code to get started</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;vertical-align:top;">
+            <span style="color:#00d97e;">&#10003;</span>
+          </td>
+          <td style="padding:6px 0;color:#8da4c4;font-size:13px;line-height:1.6;">Team collaboration and project management</td>
+        </tr>
+      </table>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid #111c2e;margin:0 0 28px;"></div>
+
+      <!-- Feedback Section -->
+      <div style="background:#0b1220;border:1px solid #1a2640;border-radius:10px;padding:24px;margin:0 0 28px;">
+        <p style="color:#e8f0fe;font-size:14px;font-weight:600;margin:0 0 8px;">Your feedback shapes Apperio</p>
+        <p style="color:#8da4c4;font-size:13px;line-height:1.7;margin:0 0 16px;">
+          As an early access user, your input matters. If you spot a bug, have a feature idea, or just want to share how things are going,
+          I'd genuinely love to hear from you. Reply directly to this email and it'll land in my inbox.
+        </p>
+        <p style="color:#4e6484;font-size:12px;margin:0;">
+          -- Femi, building Apperio
+        </p>
+      </div>
+
+      <!-- Code note -->
+      <p style="color:#4e6484;font-size:12px;line-height:1.5;margin:0;text-align:center;">
+        This code is unique to you and can only be used once.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:20px 32px;border-top:1px solid #111c2e;text-align:center;">
+      <p style="color:#4e6484;font-size:11px;margin:0;">&copy; ${year} Apperio. All rights reserved.</p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+function buildInviteEmailText(inviteCode: string, signupUrl: string): string {
+  return [
+    "Thank you for signing up.",
+    "",
+    "Your early access to Apperio is confirmed. Use the code below to create your account and start monitoring your applications.",
+    "",
+    `Invite code: ${inviteCode}`,
+    "",
+    `Sign up here: ${signupUrl}`,
+    "",
+    "What you get with early access:",
+    "- Real-time log monitoring and error tracking",
+    "- Performance metrics and interactive dashboards",
+    "- Alert rules (Slack, email, webhook notifications)",
+    "- Auto-instrumentation SDK (one line of code)",
+    "- Team collaboration and project management",
+    "",
+    "Your feedback shapes Apperio. If you spot a bug, have a feature idea, or just want to share how things are going, reply to this email -- it goes straight to my inbox.",
+    "",
+    "-- Stanley, building Apperio",
+    "",
+    "This code is unique to you and can only be used once.",
+  ].join("\n");
+}
+
+async function sendInviteEmail(email: string, inviteCode: string): Promise<void> {
+  const frontendUrl = process.env.FRONTEND_URL || "https://loghive.vercel.app";
+  const signupUrl = `${frontendUrl}/signup?code=${inviteCode}`;
+
+  await NotificationService.sendEmail({
+    to: [email],
+    subject: "You're in -- your Apperio early access code",
+    html: buildInviteEmailHtml(inviteCode, signupUrl),
+    text: buildInviteEmailText(inviteCode, signupUrl),
+    replyTo: "stanleyajanaku@gmail.com",
+  });
+}
 
 // ─── Admin: Send invite email ────────────────────────────────────────────────
 
@@ -395,55 +549,7 @@ router.post(
         });
       }
 
-      const frontendUrl = process.env.FRONTEND_URL || "https://loghive.vercel.app";
-      const signupUrl = `${frontendUrl}/signup?code=${entry.inviteCode}`;
-
-      await NotificationService.sendEmail({
-        to: [entry.email],
-        subject: "You're in. Your Apperio early access code.",
-        html: `
-          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #060b14; border-radius: 12px; overflow: hidden;">
-            <div style="padding: 32px 32px 24px; text-align: center;">
-              <h1 style="color: #00d97e; font-size: 28px; margin: 0 0 4px;">Apperio</h1>
-              <p style="color: #8b95a5; font-size: 13px; margin: 0;">Observability Platform</p>
-            </div>
-            <div style="padding: 0 32px 32px;">
-              <h2 style="color: #e2e8f0; font-size: 20px; margin: 0 0 12px;">You're in.</h2>
-              <p style="color: #8b95a5; font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
-                Your early access spot is confirmed. Use the invite code below to create your account and start monitoring your apps.
-              </p>
-              <div style="background: #111c2e; border: 1px solid #1e293b; border-radius: 8px; padding: 20px; text-align: center; margin: 0 0 24px;">
-                <p style="color: #8b95a5; font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 1px;">Your invite code</p>
-                <p style="color: #00d97e; font-size: 28px; font-weight: 700; font-family: 'Courier New', monospace; margin: 0; letter-spacing: 2px;">${entry.inviteCode}</p>
-              </div>
-              <div style="text-align: center; margin: 0 0 24px;">
-                <a href="${signupUrl}" style="display: inline-block; background: #00d97e; color: #060b14; font-weight: 600; font-size: 14px; padding: 12px 32px; border-radius: 8px; text-decoration: none;">
-                  Create Your Account
-                </a>
-              </div>
-              <p style="color: #8b95a5; font-size: 13px; line-height: 1.6; margin: 0 0 16px;">
-                <strong style="color: #e2e8f0;">What you get with early access:</strong>
-              </p>
-              <ul style="color: #8b95a5; font-size: 13px; line-height: 1.8; margin: 0 0 16px; padding-left: 20px;">
-                <li>Real-time log monitoring and error tracking</li>
-                <li>Performance metrics and dashboards</li>
-                <li>Alert rules with Slack, email, and webhook notifications</li>
-                <li>Auto-instrumentation SDK (one line of code)</li>
-                <li>Team collaboration and project management</li>
-              </ul>
-              <p style="color: #475569; font-size: 12px; line-height: 1.5; margin: 0;">
-                This code is unique to you. It can only be used once.
-              </p>
-            </div>
-            <div style="padding: 16px 32px; border-top: 1px solid #1e293b;">
-              <p style="color: #475569; font-size: 11px; margin: 0; text-align: center;">
-                &copy; ${new Date().getFullYear()} Apperio. All rights reserved.
-              </p>
-            </div>
-          </div>
-        `,
-        text: `You're in.\n\nYour Apperio early access spot is confirmed.\n\nInvite code: ${entry.inviteCode}\n\nSign up here: ${signupUrl}\n\nWhat you get:\n- Real-time log monitoring and error tracking\n- Performance metrics and dashboards\n- Alert rules (Slack, email, webhook)\n- Auto-instrumentation SDK\n- Team collaboration\n\nThis code is unique to you and can only be used once.\n\n— Apperio`,
-      });
+      await sendInviteEmail(entry.email, entry.inviteCode);
 
       entry.invitedAt = new Date();
       await entry.save();

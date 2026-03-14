@@ -12,6 +12,7 @@ interface EmailOptions {
   html?: string;
   cc?: string[];
   bcc?: string[];
+  replyTo?: string;
   attachments?: Array<{
     filename: string;
     content: string | Buffer;
@@ -116,7 +117,7 @@ export class NotificationService {
     email: {
       provider: (process.env.EMAIL_PROVIDER as NotificationConfig['email']['provider'])
         || (config.email.resendApiKey ? 'resend' : 'smtp'),
-      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@apperio.dev',
+      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'Apperio <onboarding@resend.dev>',
       fromName: process.env.FROM_NAME || 'Apperio',
     },
     webhook: {
@@ -644,6 +645,7 @@ export class NotificationService {
         html: options.html || options.text || '',
         ...(options.cc?.length ? { cc: options.cc } : {}),
         ...(options.bcc?.length ? { bcc: options.bcc } : {}),
+        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
       });
 
       if (error) {
