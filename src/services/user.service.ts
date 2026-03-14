@@ -115,6 +115,7 @@ export class UserService {
       const token = jwt.sign(
         {
           userId: savedUser._id,
+          role: savedUser.role,
           betaAccess: savedUser.betaAccess,
           betaTier: savedUser.betaTier,
         },
@@ -180,6 +181,7 @@ export class UserService {
       const token = jwt.sign(
         {
           userId: user._id,
+          role: user.role,
           betaAccess: user.betaAccess,
           betaTier: user.betaTier,
         },

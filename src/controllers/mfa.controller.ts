@@ -199,9 +199,16 @@ export class MfaController {
         } as ApiResponse);
       }
 
-      const authToken = jwt.sign({ userId: user._id }, secret, {
-        expiresIn: "10h",
-      });
+      const authToken = jwt.sign(
+        {
+          userId: user._id,
+          role: user.role,
+          betaAccess: user.betaAccess,
+          betaTier: user.betaTier,
+        },
+        secret,
+        { expiresIn: "10h" }
+      );
 
       return res.status(200).json({
         status: "success",

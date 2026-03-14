@@ -89,23 +89,38 @@ export class AlertService {
 
         // Frequency threshold check (if specified)
         const freq = ('frequency' in condition) ? condition.frequency : undefined;
-        const interval = ('intervalMinutes' in condition) ? condition.intervalMinutes : undefined;
+        const interval = ('intervalMinutes' in condition) ? (condition.intervalMinutes ?? 10) : undefined;
 
-        if (freq && interval) {
+        if (freq && freq > 1 && interval) {
           const since = new Date(Date.now() - interval * 60 * 1000).toISOString();
-          const count = await LogModel.countDocuments({
+
+          // Build a query that mirrors the rule condition (not just log level)
+          const conditionQuery: any = {
             projectId: log.projectId,
             timestamp: { $gte: since },
-            level: log.level,
-          });
+          };
+          const simple = ('operator' in condition)
+            ? (condition as ICompositeCondition).conditions[0]
+            : condition as ISimpleCondition;
+          if (simple.level) conditionQuery.level = simple.level;
+          if (simple.keyword) conditionQuery.message = { $regex: simple.keyword, $options: 'i' };
+          if (simple.service) conditionQuery.service = simple.service;
+          if (simple.environment) conditionQuery.environment = simple.environment;
+          if (simple.eventType) conditionQuery.eventType = simple.eventType;
+
+          const count = await LogModel.countDocuments(conditionQuery);
           if (count < freq) continue;
         }
+
+        // Use the rule's intervalMinutes as cooldown window for duplicate prevention
+        const cooldownMinutes = interval || 10;
 
         // Check for duplicate alerts to prevent spam
         const isDuplicate = await this.isDuplicateAlert(
           projectId,
           rule._id as Types.ObjectId,
-          log
+          log,
+          cooldownMinutes
         );
         if (isDuplicate) continue;
 

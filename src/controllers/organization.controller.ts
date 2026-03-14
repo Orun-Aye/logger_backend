@@ -75,13 +75,22 @@ export class OrganizationController {
 
   static async createOrganization(req: Request, res: Response): Promise<Response> {
     try {
-      const { name, slug, billingEmail } = req.body;
-      if (!name || !slug) {
+      const { name, billingEmail } = req.body;
+      if (!name) {
         return res.status(400).json({
           status: "error",
-          message: "Name and slug are required",
+          message: "Name is required",
         } as ApiResponse);
       }
+
+      // Auto-generate slug from name if not provided
+      const slug =
+        req.body.slug ||
+        name
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
 
       const org = await OrganizationService.createOrganization(
         name,
