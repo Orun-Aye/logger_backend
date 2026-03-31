@@ -117,7 +117,7 @@ export class NotificationService {
     email: {
       provider: (process.env.EMAIL_PROVIDER as NotificationConfig['email']['provider'])
         || (config.email.resendApiKey ? 'resend' : 'smtp'),
-      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'Apperio <onboarding@resend.dev>',
+      fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'Apperio <femi@apperio.dev>',
       fromName: process.env.FROM_NAME || 'Apperio',
     },
     webhook: {

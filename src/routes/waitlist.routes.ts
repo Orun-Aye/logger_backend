@@ -506,14 +506,14 @@ function buildInviteEmailText(inviteCode: string, signupUrl: string): string {
     "",
     "Your feedback shapes Apperio. If you spot a bug, have a feature idea, or just want to share how things are going, reply to this email -- it goes straight to my inbox.",
     "",
-    "-- Stanley, building Apperio",
+    "-- Femi, building Apperio",
     "",
     "This code is unique to you and can only be used once.",
   ].join("\n");
 }
 
 async function sendInviteEmail(email: string, inviteCode: string): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || "https://loghive.vercel.app";
+  const frontendUrl = process.env.FRONTEND_URL || "https://www.apperio.dev";
   const signupUrl = `${frontendUrl}/signup?code=${inviteCode}`;
 
   await NotificationService.sendEmail({
@@ -521,7 +521,7 @@ async function sendInviteEmail(email: string, inviteCode: string): Promise<void>
     subject: "You're in -- your Apperio early access code",
     html: buildInviteEmailHtml(inviteCode, signupUrl),
     text: buildInviteEmailText(inviteCode, signupUrl),
-    replyTo: "stanleyajanaku@gmail.com",
+    replyTo: "femi@apperio.dev",
   });
 }
 
