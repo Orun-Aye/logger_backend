@@ -15,7 +15,7 @@ const filtersSchema = zod_1.z.object({
     services: zod_1.z.array(zod_1.z.string()).optional(),
     environments: zod_1.z.array(zod_1.z.string()).optional(),
     eventTypes: zod_1.z
-        .array(zod_1.z.enum(["error", "performance", "interaction", "network", "console", "pageview"]))
+        .array(zod_1.z.enum(["error", "performance", "interaction", "network", "console", "pageview", "web-vital", "breadcrumb", "message", "system"]))
         .optional(),
     search: zod_1.z.string().max(500).optional(),
     timeRange: timeRangeSchema.optional(),
@@ -64,13 +64,16 @@ exports.batchLogSchema = zod_1.z.object({
         context: zod_1.z.record(zod_1.z.any()).optional(),
         metadata: zod_1.z.any().optional(),
         eventType: zod_1.z
-            .enum(["error", "performance", "interaction", "network", "console", "pageview"])
+            .enum(["error", "performance", "interaction", "network", "console", "pageview", "web-vital", "breadcrumb", "message", "system"])
             .optional(),
         userAgent: zod_1.z.string().max(500).optional(),
         url: zod_1.z.string().max(2000).optional(),
         referrer: zod_1.z.string().max(2000).optional(),
         correlationId: zod_1.z.string().max(100).optional(),
         sessionId: zod_1.z.string().max(100).optional(),
+        traceId: zod_1.z.string().max(100).optional(),
+        spanId: zod_1.z.string().max(100).optional(),
+        release: zod_1.z.string().max(100).optional(),
     }))
         .min(1)
         .max(100), // Max 100 logs per batch

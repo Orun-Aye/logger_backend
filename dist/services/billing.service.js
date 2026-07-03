@@ -6,7 +6,6 @@ const mongoose_1 = require("mongoose");
 const subscription_model_1 = require("../models/subscription.model");
 const project_model_1 = require("../models/project.model");
 const alertRule_model_1 = require("../models/alertRule.model");
-const customDashboard_model_1 = require("../models/customDashboard.model");
 const apiToken_model_1 = require("../models/apiToken.model");
 const plans_config_1 = require("../config/plans.config");
 // Custom error classes
@@ -134,15 +133,13 @@ class BillingService {
         const limits = planConfig.limits;
         const userObjId = new mongoose_1.Types.ObjectId(userId);
         // Count actual resource usage in parallel
-        const [projectCount, teamMemberCount, alertRuleCount, customDashboardCount, apiTokenCount] = await Promise.all([
+        const [projectCount, teamMemberCount, alertRuleCount, apiTokenCount] = await Promise.all([
             // Projects owned by user
             project_model_1.ProjectModel.countDocuments({ ownerId: userObjId, isActive: true }),
             // Unique team members across all projects owned by user
             this.countTeamMembers(userId),
             // Alert rules across user's projects
             this.countAlertRules(userId),
-            // Custom dashboards
-            customDashboard_model_1.CustomDashboardModel.countDocuments({ userId: userObjId }),
             // API tokens
             apiToken_model_1.ApiTokenModel.countDocuments({ userId: userObjId, isActive: true }),
         ]);
@@ -152,7 +149,6 @@ class BillingService {
             projects: projectCount,
             teamMembers: teamMemberCount,
             alertRules: alertRuleCount,
-            customDashboards: customDashboardCount,
             apiTokens: apiTokenCount,
         };
         const percentages = {
@@ -161,7 +157,6 @@ class BillingService {
             projects: (0, plans_config_1.getUsagePercentage)(usage.projects, limits.maxProjects),
             teamMembers: (0, plans_config_1.getUsagePercentage)(usage.teamMembers, limits.maxTeamMembers),
             alertRules: (0, plans_config_1.getUsagePercentage)(usage.alertRules, limits.maxAlertRules),
-            customDashboards: (0, plans_config_1.getUsagePercentage)(usage.customDashboards, limits.maxCustomDashboards),
             apiTokens: (0, plans_config_1.getUsagePercentage)(usage.apiTokens, limits.maxApiTokens),
         };
         return {
@@ -269,10 +264,6 @@ class BillingService {
             case "alertRules":
                 current = usage.alertRules;
                 limit = limits.maxAlertRules;
-                break;
-            case "customDashboards":
-                current = usage.customDashboards;
-                limit = limits.maxCustomDashboards;
                 break;
             case "apiTokens":
                 current = usage.apiTokens;

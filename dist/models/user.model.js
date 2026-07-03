@@ -56,6 +56,22 @@ const UserSchema = new mongoose_1.Schema({
     mfaEnabled: { type: Boolean, default: false },
     mfaSecret: { type: String },
     mfaBackupCodes: [{ type: String }],
+    // Beta access
+    betaAccess: { type: Boolean, default: false },
+    betaTier: { type: String, enum: ["core", "full"], default: "core" },
+    inviteCode: { type: String },
+    githubConnection: {
+        type: {
+            githubUserId: { type: Number, required: true },
+            githubLogin: { type: String, required: true },
+            accessToken: { type: String, required: true },
+            scopes: { type: [String], default: [] },
+            connectedAt: { type: Date, default: Date.now },
+        },
+        required: false,
+        default: undefined,
+        select: true,
+    },
 }, {
     timestamps: true,
 });

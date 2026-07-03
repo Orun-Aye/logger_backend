@@ -48,19 +48,35 @@ class AlertService {
                     continue;
                 // Frequency threshold check (if specified)
                 const freq = ('frequency' in condition) ? condition.frequency : undefined;
-                const interval = ('intervalMinutes' in condition) ? condition.intervalMinutes : undefined;
-                if (freq && interval) {
+                const interval = ('intervalMinutes' in condition) ? (condition.intervalMinutes ?? 10) : undefined;
+                if (freq && freq > 1 && interval) {
                     const since = new Date(Date.now() - interval * 60 * 1000).toISOString();
-                    const count = await log_model_1.LogModel.countDocuments({
+                    // Build a query that mirrors the rule condition (not just log level)
+                    const conditionQuery = {
                         projectId: log.projectId,
                         timestamp: { $gte: since },
-                        level: log.level,
-                    });
+                    };
+                    const simple = ('operator' in condition)
+                        ? condition.conditions[0]
+                        : condition;
+                    if (simple.level)
+                        conditionQuery.level = simple.level;
+                    if (simple.keyword)
+                        conditionQuery.message = { $regex: simple.keyword, $options: 'i' };
+                    if (simple.service)
+                        conditionQuery.service = simple.service;
+                    if (simple.environment)
+                        conditionQuery.environment = simple.environment;
+                    if (simple.eventType)
+                        conditionQuery.eventType = simple.eventType;
+                    const count = await log_model_1.LogModel.countDocuments(conditionQuery);
                     if (count < freq)
                         continue;
                 }
+                // Use the rule's intervalMinutes as cooldown window for duplicate prevention
+                const cooldownMinutes = interval || 10;
                 // Check for duplicate alerts to prevent spam
-                const isDuplicate = await this.isDuplicateAlert(projectId, rule._id, log);
+                const isDuplicate = await this.isDuplicateAlert(projectId, rule._id, log, cooldownMinutes);
                 if (isDuplicate)
                     continue;
                 const severity = this.determineSeverity(log.level);

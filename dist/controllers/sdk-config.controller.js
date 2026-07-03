@@ -9,11 +9,17 @@ class SDKConfigController {
     static async getConfig(req, res) {
         try {
             const { projectId } = req.params;
-            const config = await sdk_config_service_1.SDKConfigService.getConfig(projectId);
-            return res.status(200).json(config);
+            const config = await sdk_config_service_1.SDKConfigService.getOrCreateDefault(projectId);
+            return res.status(200).json({
+                status: "success",
+                data: config,
+            });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Failed to fetch SDK config' });
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to fetch SDK config",
+            });
         }
     }
     /**
@@ -24,10 +30,16 @@ class SDKConfigController {
             const { projectId } = req.params;
             const updates = req.body;
             const config = await sdk_config_service_1.SDKConfigService.upsertConfig(projectId, updates);
-            return res.json(config);
+            return res.status(200).json({
+                status: "success",
+                data: config,
+            });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Failed to update SDK config' });
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to update SDK config",
+            });
         }
     }
     /**
@@ -56,7 +68,7 @@ class SDKConfigController {
                     autoCapture: config.autoCapture,
                     sanitization: {
                         enabled: config.sanitization?.enabled,
-                        strictMode: config.sanitization?.strictMode,
+                        preset: config.sanitization?.strictMode,
                     },
                 },
             });

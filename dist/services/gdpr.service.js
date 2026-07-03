@@ -12,7 +12,6 @@ const alertRule_model_1 = require("../models/alertRule.model");
 const alertEvent_model_1 = require("../models/alertEvent.model");
 const userPreference_model_1 = require("../models/userPreference.model");
 const apiToken_model_1 = require("../models/apiToken.model");
-const customDashboard_model_1 = require("../models/customDashboard.model");
 const savedSearch_model_1 = require("../models/savedSearch.model");
 const logger_1 = __importDefault(require("../utils/logger"));
 class GdprService {
@@ -74,26 +73,19 @@ class GdprService {
         archive.append(JSON.stringify(preferences, null, 2), {
             name: "preferences.json",
         });
-        // 7. Custom dashboards
-        const customDashboards = await customDashboard_model_1.CustomDashboardModel.find({
-            userId,
-        }).lean();
-        archive.append(JSON.stringify(customDashboards, null, 2), {
-            name: "custom-dashboards.json",
-        });
-        // 8. Saved searches
+        // 7. Saved searches
         const savedSearches = await savedSearch_model_1.SavedSearchModel.find({ userId }).lean();
         archive.append(JSON.stringify(savedSearches, null, 2), {
             name: "saved-searches.json",
         });
-        // 9. API tokens (exclude hash for security)
+        // 8. API tokens (exclude hash for security)
         const apiTokens = await apiToken_model_1.ApiTokenModel.find({ userId })
             .select("-tokenHash")
             .lean();
         archive.append(JSON.stringify(apiTokens, null, 2), {
             name: "api-tokens.json",
         });
-        // 10. Export metadata
+        // 9. Export metadata
         archive.append(JSON.stringify({
             exportedAt: new Date().toISOString(),
             userId,
@@ -105,7 +97,6 @@ class GdprService {
                 "alert-rules",
                 "alerts",
                 "preferences",
-                "custom-dashboards",
                 "saved-searches",
                 "api-tokens",
             ],
@@ -162,7 +153,6 @@ class GdprService {
         // Delete user-scoped data
         await userPreference_model_1.UserPreferenceModel.deleteMany({ userId });
         await apiToken_model_1.ApiTokenModel.deleteMany({ userId });
-        await customDashboard_model_1.CustomDashboardModel.deleteMany({ userId });
         await savedSearch_model_1.SavedSearchModel.deleteMany({ userId }); // Any remaining saved searches
         // Finally delete the user
         await user_model_1.UserModel.findByIdAndDelete(userId);

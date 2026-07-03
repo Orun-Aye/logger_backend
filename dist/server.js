@@ -34,7 +34,6 @@ const userPreference_routes_1 = __importDefault(require("./routes/userPreference
 // Phase 2.2 routes
 const escalationPolicy_routes_1 = __importDefault(require("./routes/escalationPolicy.routes"));
 const maintenanceWindow_routes_1 = __importDefault(require("./routes/maintenanceWindow.routes"));
-const customDashboard_routes_1 = __importDefault(require("./routes/customDashboard.routes"));
 // Phase 2.3 routes
 const funnel_routes_1 = __importDefault(require("./routes/funnel.routes"));
 const regression_routes_1 = __importDefault(require("./routes/regression.routes"));
@@ -55,12 +54,19 @@ const replay_routes_1 = __importDefault(require("./routes/replay.routes"));
 const integration_routes_1 = __importDefault(require("./routes/integration.routes"));
 // Third-party integrations management routes
 const integrations_routes_1 = __importDefault(require("./routes/integrations.routes"));
+// GitHub OAuth + repo linking + commits proxy
+const githubIntegration_routes_1 = __importDefault(require("./routes/githubIntegration.routes"));
+// Phase 7 Change Intelligence: GitHub App webhooks + change feed + error groups
+const githubWebhook_routes_1 = __importDefault(require("./routes/githubWebhook.routes"));
+const change_routes_1 = __importDefault(require("./routes/change.routes"));
 // Admin dashboard routes
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 // Billing & Subscription routes
 const billing_routes_1 = __importDefault(require("./routes/billing.routes"));
 // Public pages (status, changelog — no auth)
 const public_routes_1 = __importDefault(require("./routes/public.routes"));
+// Waitlist (public, no auth)
+const waitlist_routes_1 = __importDefault(require("./routes/waitlist.routes"));
 // Services
 const websocket_service_1 = require("./services/websocket.service");
 const db_1 = require("./utils/db");
@@ -92,8 +98,11 @@ const logIngestionCors = (0, cors_1.default)({
 });
 // Handle preflight OPTIONS requests globally (before any route matching)
 app.options("/{*path}", (0, cors_1.default)({ origin: true, credentials: true }));
+// Phase 7: GitHub App webhooks need the RAW body for HMAC signature
+// verification, so this router mounts BEFORE the global JSON parser.
+app.use("/api/v1/webhooks", githubWebhook_routes_1.default);
 // Phase 1.3 Global Middleware (order matters!)
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: '5mb' }));
 app.use(requestId_middleware_1.requestIdMiddleware);
 app.use(requestLogger_middleware_1.conditionalRequestLogger);
 app.get("/", (req, res) => {
@@ -504,6 +513,10 @@ Authorization: Bearer YOUR_JWT_TOKEN
 app.use("/api/v1", health_routes_1.default);
 // Public pages (status, changelog — open CORS, no auth)
 app.use("/api/v1/public", logIngestionCors, public_routes_1.default);
+// Waitlist (public POST + validate, admin GET/PUT/POST for management)
+// Uses logIngestionCors to allow public join + invite validation from any origin
+// Admin endpoints are protected by verifyToken + requireAdmin within the routes
+app.use("/api/v1/waitlist", logIngestionCors, waitlist_routes_1.default);
 // Apply restricted CORS to admin/dashboard routes
 app.use("/api/v1/users", restrictedCors, user_routes_1.default);
 app.use("/api/v1/projects", restrictedCors, project_routes_1.default, sdk_config_routes_1.default, savedSearch_routes_1.default);
@@ -518,7 +531,6 @@ app.use("/api/v1/preferences", restrictedCors, userPreference_routes_1.default);
 // Phase 2.2 routes
 app.use("/api/v1/escalation-policies", restrictedCors, escalationPolicy_routes_1.default);
 app.use("/api/v1/maintenance-windows", restrictedCors, maintenanceWindow_routes_1.default);
-app.use("/api/v1/custom-dashboards", restrictedCors, customDashboard_routes_1.default);
 // Phase 2.3 routes
 app.use("/api/v1/funnels", restrictedCors, funnel_routes_1.default);
 app.use("/api/v1/regressions", restrictedCors, regression_routes_1.default);
@@ -537,6 +549,11 @@ app.use("/api/v1/organizations", restrictedCors, organization_routes_1.default);
 app.use("/api/v1/integrations", restrictedCors, integration_routes_1.default);
 // Third-party integrations management
 app.use("/api/v1/integrations/manage", restrictedCors, integrations_routes_1.default);
+// GitHub OAuth + repo linking. Mounted at /api/v1 because the route file
+// itself uses absolute paths (`/integrations/github/...`, `/projects/:id/...`).
+app.use("/api/v1", restrictedCors, githubIntegration_routes_1.default);
+// Phase 7 Change Intelligence: change feed, deployments, error groups
+app.use("/api/v1", restrictedCors, change_routes_1.default);
 // Admin dashboard routes
 app.use("/api/v1/admin", restrictedCors, admin_routes_1.default);
 // Billing & Subscription routes

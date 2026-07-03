@@ -24,6 +24,17 @@ const ProjectSchema = new mongoose_1.Schema({
             url: { type: String, default: "" },
             headers: { type: mongoose_1.Schema.Types.Mixed, default: {} },
         },
+        githubRepo: {
+            type: {
+                owner: { type: String, required: true },
+                repo: { type: String, required: true },
+                branch: { type: String, required: true, default: "main" },
+                linkedAt: { type: Date, default: Date.now },
+                linkedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+            },
+            required: false,
+            default: undefined,
+        },
     },
     rateLimitConfig: {
         maxRequestsPerMinute: { type: Number, default: 100 },
@@ -41,6 +52,8 @@ const ProjectSchema = new mongoose_1.Schema({
         value: { type: Number, default: 100, min: 1, max: 1000 },
         alwaysKeepLevels: { type: [String], default: ["error", "fatal"] },
     },
+    archivedAt: { type: Date },
+    archiveReason: { type: String },
     organizationId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Organization" },
 }, {
     timestamps: true,

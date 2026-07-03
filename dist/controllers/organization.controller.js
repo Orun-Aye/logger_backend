@@ -41,13 +41,20 @@ class OrganizationController {
     // ──────────────────────────────────────────────
     static async createOrganization(req, res) {
         try {
-            const { name, slug, billingEmail } = req.body;
-            if (!name || !slug) {
+            const { name, billingEmail } = req.body;
+            if (!name) {
                 return res.status(400).json({
                     status: "error",
-                    message: "Name and slug are required",
+                    message: "Name is required",
                 });
             }
+            // Auto-generate slug from name if not provided
+            const slug = req.body.slug ||
+                name
+                    .toLowerCase()
+                    .trim()
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-|-$/g, "");
             const org = await organization_service_1.OrganizationService.createOrganization(name, slug, req.userId);
             // If billingEmail was provided, update it
             if (billingEmail) {

@@ -186,3 +186,140 @@ export async function listRecentCommits(
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?${params.toString()}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Change Intelligence (Phase 7) additions
+// ---------------------------------------------------------------------------
+
+export interface GithubCommitFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+export interface GithubCommitDetail extends GithubCommit {
+  stats?: { additions: number; deletions: number; total: number };
+  files?: GithubCommitFile[];
+}
+
+export interface GithubIssue {
+  id: number;
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  html_url: string;
+  body?: string | null;
+}
+
+export interface GithubRelease {
+  id: number;
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  published_at: string | null;
+  body?: string | null;
+  author?: { login: string } | null;
+}
+
+/** Fetch a single commit including per-file stats and patches. */
+export async function getCommitDetail(
+  token: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<GithubCommitDetail> {
+  return githubApiCall<GithubCommitDetail>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
+  );
+}
+
+/** Compare two refs; returns the commits between them (used for suspect-commit windows). */
+export async function compareCommits(
+  token: string,
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<{ commits: GithubCommit[]; files?: GithubCommitFile[] }> {
+  return githubApiCall(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+  );
+}
+
+export async function createIssue(
+  token: string,
+  owner: string,
+  repo: string,
+  issue: { title: string; body?: string; labels?: string[] },
+): Promise<GithubIssue> {
+  return githubApiCall<GithubIssue>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: issue.title,
+        body: issue.body || "",
+        labels: issue.labels || [],
+      }),
+    },
+  );
+}
+
+export async function getIssue(
+  token: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<GithubIssue> {
+  return githubApiCall<GithubIssue>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}`,
+  );
+}
+
+export async function createIssueComment(
+  token: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  body: string,
+): Promise<void> {
+  await githubApiCall(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}/comments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    },
+  );
+}
+
+export async function listReleases(
+  token: string,
+  owner: string,
+  repo: string,
+  perPage = 20,
+): Promise<GithubRelease[]> {
+  return githubApiCall<GithubRelease[]>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=${perPage}`,
+  );
+}
+
+/** List repositories accessible to an installation token. */
+export async function listInstallationRepos(
+  installationToken: string,
+): Promise<GithubRepo[]> {
+  const result = await githubApiCall<{ repositories: GithubRepo[] }>(
+    installationToken,
+    "/installation/repositories?per_page=100",
+  );
+  return result.repositories || [];
+}

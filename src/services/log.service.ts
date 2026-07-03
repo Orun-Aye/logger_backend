@@ -13,6 +13,8 @@ import { LogModel, ILog } from "../models/log.model"; // Import ILog for type sa
 import { Types, SortOrder } from "mongoose";
 import { globalServices } from "../server";
 import { AlertService } from "./alert.service";
+import { FingerprintService } from "./fingerprint.service";
+import { ErrorGroupService } from "./errorGroup.service";
 import { Readable } from "stream";
 
 // Custom error classes for better error handling
@@ -182,10 +184,28 @@ export class LogService {
         ingestionSuccess: true,
       };
 
+      // Phase 7: fingerprint error events so they can be grouped
+      const isErrorEvent =
+        data.level === "error" ||
+        data.level === "fatal" ||
+        data.eventType === "error";
+      if (isErrorEvent && data.eventType !== "system") {
+        newLogData.fingerprint = FingerprintService.compute({
+          errorName: data.error?.name,
+          message: data.error?.message || data.message,
+          stack: data.error?.stack,
+        });
+      }
+
       const newLog = await LogModel.create(newLogData);
 
       // Fire-and-forget alert evaluation to not block ingestion
       AlertService.evaluateLogAndTrigger(newLog.toObject() as ILog).catch(() => {});
+
+      // Phase 7: fire-and-forget error-group rollup (new-group notifications)
+      if (newLogData.fingerprint) {
+        ErrorGroupService.recordError(newLog.toObject() as ILog).catch(() => {});
+      }
 
       if (globalServices.dashboardWebSocketService) {
         globalServices.dashboardWebSocketService.broadcastToProject(

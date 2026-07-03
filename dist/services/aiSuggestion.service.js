@@ -107,19 +107,21 @@ class AISuggestionService {
                 });
             }
             // 3. Detect slow endpoints (response time > 2000ms p95)
+            // Read SDK-emitted network duration; the top-level `responseTime` field
+            // is never populated by the SDK and was always returning empty results.
             const slowEndpoints = await log_model_1.LogModel.aggregate([
                 {
                     $match: {
                         projectId,
                         createdAt: { $gte: startDate, $lte: endDate },
-                        responseTime: { $exists: true, $type: "number" },
+                        "data.network.duration": { $exists: true, $type: "number" },
                     },
                 },
                 {
                     $group: {
                         _id: "$url",
-                        avgResponseTime: { $avg: "$responseTime" },
-                        maxResponseTime: { $max: "$responseTime" },
+                        avgResponseTime: { $avg: "$data.network.duration" },
+                        maxResponseTime: { $max: "$data.network.duration" },
                         count: { $sum: 1 },
                     },
                 },

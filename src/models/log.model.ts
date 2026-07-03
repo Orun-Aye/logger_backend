@@ -27,6 +27,7 @@ export interface ILog extends Document {
   traceId?: string; // SDK Phase 2: Distributed tracing
   spanId?: string; // SDK Phase 2: Distributed tracing
   release?: string; // SDK Phase 2: Release/version tracking
+  fingerprint?: string; // Phase 7: error-group signature (error/fatal logs only)
   createdAt?: Date;
   updatedAt?: Date;
   ingestionStartTime?: Date;
@@ -115,6 +116,9 @@ const LogSchema: Schema = new Schema<ILog>(
       type: String,
       index: true, // SDK Phase 2: Filter/group by release version
     },
+    fingerprint: {
+      type: String, // Phase 7: links error logs to their ErrorGroup
+    },
     ingestionStartTime: {
       type: Date,
     },
@@ -149,5 +153,6 @@ LogSchema.index({ traceId: 1, timestamp: -1 }); // SDK Phase 2: Trace-based quer
 LogSchema.index({ projectId: 1, traceId: 1 }); // SDK Phase 2: Project + trace
 LogSchema.index({ projectId: 1, release: 1, timestamp: -1 }); // SDK Phase 2: Release tracking
 LogSchema.index({ projectId: 1, eventType: 1, timestamp: -1 }); // Web vitals time queries
+LogSchema.index({ projectId: 1, fingerprint: 1, createdAt: -1 }); // Phase 7: error-group sample events
 
 export const LogModel = mongoose.model<ILog>("Log", LogSchema);

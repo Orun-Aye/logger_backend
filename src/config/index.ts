@@ -241,6 +241,23 @@ export const config = {
   },
 
   /**
+   * GitHub App configuration (Change Intelligence — webhooks, installation tokens).
+   * All three values must be set for the GitHub App features to activate;
+   * otherwise the platform falls back to user-OAuth-based repo access.
+   */
+  githubApp: {
+    appId: getEnv("GITHUB_APP_ID", ""),
+    // PEM private key. Supports literal "\n" escapes (common in env UIs) and
+    // a base64-encoded variant via GITHUB_APP_PRIVATE_KEY_BASE64.
+    privateKey: process.env.GITHUB_APP_PRIVATE_KEY_BASE64
+      ? Buffer.from(process.env.GITHUB_APP_PRIVATE_KEY_BASE64, "base64").toString("utf8")
+      : (process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+    webhookSecret: getEnv("GITHUB_WEBHOOK_SECRET", ""),
+    /** App slug, used to build the public install URL. */
+    slug: getEnv("GITHUB_APP_SLUG", "apperio"),
+  },
+
+  /**
    * Data retention configuration
    */
   retention: {

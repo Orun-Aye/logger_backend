@@ -1,8 +1,10 @@
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import { GithubOAuthService } from "../services/integrations/github-oauth.service";
+import { GithubAppService } from "../services/integrations/github-app.service";
 import { GitHubApiError } from "../services/integrations/github-client";
 import { ProjectModel } from "../models/project.model";
+import { ChangeService } from "../services/change.service";
 
 function ok<T>(res: Response, data: T) {
   return res.json({ status: "success", data });
@@ -99,6 +101,39 @@ export const GithubIntegrationController = {
     }
   },
 
+  /**
+   * GitHub App installation status. Tells the frontend whether the App is
+   * configured platform-side and whether an installation covers a repo.
+   */
+  async getAppStatus(req: Request, res: Response) {
+    const userId = req.userId;
+    if (!userId) return fail(res, 401, "Authentication required");
+    try {
+      const enabled = GithubAppService.isEnabled();
+      const owner =
+        typeof req.query.owner === "string" ? req.query.owner : undefined;
+      const repo =
+        typeof req.query.repo === "string" ? req.query.repo : undefined;
+
+      let coversRepo: boolean | undefined;
+      if (enabled && owner && repo) {
+        const installation = await GithubAppService.findInstallationForRepo(
+          owner,
+          repo
+        );
+        coversRepo = Boolean(installation);
+      }
+
+      return ok(res, {
+        enabled,
+        installUrl: enabled ? GithubAppService.getInstallUrl() : null,
+        coversRepo,
+      });
+    } catch (err) {
+      return fail(res, 500, (err as Error).message);
+    }
+  },
+
   async listRepos(req: Request, res: Response) {
     const userId = req.userId;
     if (!userId) return fail(res, 401, "Authentication required");
@@ -160,6 +195,10 @@ export const GithubIntegrationController = {
       ).lean();
 
       if (!updated) return fail(res, 404, "Project not found");
+
+      // Phase 7: import recent commits + releases so the feed starts populated
+      void ChangeService.backfillProject(projectId);
+
       return ok(res, updated.integrationSettings?.githubRepo);
     } catch (err) {
       return fail(res, 500, (err as Error).message);

@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserService = exports.UserValidationError = exports.UserNotFoundError = void 0;
 const user_model_1 = require("../models/user.model");
+const waitlist_model_1 = require("../models/waitlist.model");
 const dotenv_1 = __importDefault(require("dotenv"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
@@ -56,6 +57,20 @@ class UserService {
     static async createUser(data) {
         try {
             this.validateUserSignupData(data);
+            // Invite code is required during beta
+            if (!data.inviteCode) {
+                throw new UserValidationError("An invite code is required to sign up during early access.");
+            }
+            // Validate invite code against waitlist
+            const waitlistEntry = await waitlist_model_1.WaitlistModel.findOne({
+                inviteCode: data.inviteCode,
+            });
+            if (!waitlistEntry || waitlistEntry.status !== "approved") {
+                throw new UserValidationError("Invalid or expired invite code.");
+            }
+            if (waitlistEntry.signedUpAt) {
+                throw new UserValidationError("This invite code has already been used.");
+            }
             // Check for existing user with the same email
             const existingUser = await user_model_1.UserModel.findOne({
                 email: data.email,
@@ -65,34 +80,45 @@ class UserService {
             }
             // Hash the password here if needed
             const hashedPassword = await bcrypt_1.default.hash(data.password, 10);
-            // Create a new user
+            // Create a new user with beta access
             const newUser = new user_model_1.UserModel({
                 email: data.email,
                 firstName: data.firstName,
                 lastName: data.lastName,
-                password: hashedPassword, // Use the hashed password
+                password: hashedPassword,
                 role: data.role || "developer",
+                betaAccess: true,
+                betaTier: "core",
+                inviteCode: data.inviteCode,
             });
             const savedUser = await newUser.save();
+            // Mark waitlist entry as signed up
+            waitlistEntry.signedUpAt = new Date();
+            await waitlistEntry.save();
             if (!secret) {
                 throw new Error("JWT secret is not defined in environment variables");
             }
-            const token = jsonwebtoken_1.default.sign({ userId: savedUser._id }, secret, {
-                expiresIn: "10h",
-            });
+            const token = jsonwebtoken_1.default.sign({
+                userId: savedUser._id,
+                role: savedUser.role,
+                betaAccess: savedUser.betaAccess,
+                betaTier: savedUser.betaTier,
+            }, secret, { expiresIn: "10h" });
             return {
                 _id: savedUser._id,
                 email: savedUser.email,
                 firstName: savedUser.firstName,
                 lastName: savedUser.lastName,
                 role: savedUser.role,
+                betaAccess: savedUser.betaAccess,
+                betaTier: savedUser.betaTier,
                 token,
                 joinedAt: savedUser.joinedAt,
             };
         }
         catch (error) {
             if (error instanceof UserValidationError) {
-                throw error; // Re-throw validation errors
+                throw error;
             }
             throw new Error(`Failed to create user: ${error}`);
         }
@@ -122,15 +148,20 @@ class UserService {
                     mfaToken,
                 };
             }
-            const token = jsonwebtoken_1.default.sign({ userId: user._id }, secret, {
-                expiresIn: "10h",
-            });
+            const token = jsonwebtoken_1.default.sign({
+                userId: user._id,
+                role: user.role,
+                betaAccess: user.betaAccess,
+                betaTier: user.betaTier,
+            }, secret, { expiresIn: "10h" });
             return {
                 _id: user._id,
                 email: user.email,
                 firstName: user.firstName,
                 lastName: user.lastName,
                 role: user.role,
+                betaAccess: user.betaAccess,
+                betaTier: user.betaTier,
                 token,
                 joinedAt: user.joinedAt,
             };

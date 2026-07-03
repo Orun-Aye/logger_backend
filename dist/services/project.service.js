@@ -221,7 +221,7 @@ class ProjectService {
                             totalErrors: {
                                 $sum: {
                                     $cond: [
-                                        { $in: ["$level", ["error", "fatal", "warn"]] },
+                                        { $in: ["$level", ["error", "fatal"]] },
                                         1,
                                         0,
                                     ],
@@ -229,7 +229,7 @@ class ProjectService {
                             },
                             criticalErrors: {
                                 $sum: {
-                                    $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0],
+                                    $cond: [{ $in: ["$level", ["fatal"]] }, 1, 0],
                                 },
                             },
                         },
@@ -241,16 +241,24 @@ class ProjectService {
                         $match: {
                             projectId: { $in: projectIds },
                             timestamp: { $gte: metricsStartTime.toISOString() },
-                            responseTime: { $exists: true, $type: "number", $gte: 0 },
+                            $or: [
+                                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                            ],
+                        },
+                    },
+                    {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
                         },
                     },
                     {
                         $group: {
                             _id: "$projectId",
-                            avgResponseTime: { $avg: "$responseTime" },
-                            minResponseTime: { $min: "$responseTime" },
-                            maxResponseTime: { $max: "$responseTime" },
-                            responseTimes: { $push: "$responseTime" },
+                            avgResponseTime: { $avg: "$_latency" },
+                            minResponseTime: { $min: "$_latency" },
+                            maxResponseTime: { $max: "$_latency" },
+                            responseTimes: { $push: "$_latency" },
                         },
                     },
                     {
@@ -309,7 +317,7 @@ class ProjectService {
                             errorsLast24h: {
                                 $sum: {
                                     $cond: [
-                                        { $in: ["$level", ["error", "fatal", "warn"]] },
+                                        { $in: ["$level", ["error", "fatal"]] },
                                         1,
                                         0,
                                     ],
@@ -394,8 +402,8 @@ class ProjectService {
                             recentAvgResponseTime: {
                                 $avg: {
                                     $cond: [
-                                        { $and: ["$isRecent", { $type: "$responseTime" }] },
-                                        "$responseTime",
+                                        { $and: ["$isRecent", { $isNumber: "$data.network.duration" }] },
+                                        "$data.network.duration",
                                         null,
                                     ],
                                 },
@@ -406,10 +414,10 @@ class ProjectService {
                                         {
                                             $and: [
                                                 { $not: "$isRecent" },
-                                                { $type: "$responseTime" },
+                                                { $isNumber: "$data.network.duration" },
                                             ],
                                         },
-                                        "$responseTime",
+                                        "$data.network.duration",
                                         null,
                                     ],
                                 },
@@ -627,8 +635,6 @@ class ProjectService {
             const now = new Date();
             const startTime = new Date(now.getTime() - timeRange * 60 * 60 * 1000);
             const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-            const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
             // Comprehensive analytics queries
             const [
             // Basic metrics
@@ -653,7 +659,8 @@ class ProjectService {
                 log_model_1.LogModel.countDocuments({ projectId: id }),
                 log_model_1.LogModel.countDocuments({
                     projectId: id,
-                    level: { $in: ["error", "fatal", "warn"] },
+                    level: { $in: ["error", "fatal"] },
+                    eventType: { $ne: "system" },
                     timestamp: { $gte: startTime.toISOString() }
                 }),
                 log_model_1.LogModel.countDocuments({
@@ -666,15 +673,23 @@ class ProjectService {
                         $match: {
                             projectId: id,
                             timestamp: { $gte: startTime.toISOString() },
-                            responseTime: { $exists: true, $type: "number", $gte: 0 }
+                            $or: [
+                                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
                         }
                     },
                     {
                         $group: {
                             _id: null,
-                            avgResponseTime: { $avg: "$responseTime" },
-                            minResponseTime: { $min: "$responseTime" },
-                            maxResponseTime: { $max: "$responseTime" },
+                            avgResponseTime: { $avg: "$_latency" },
+                            minResponseTime: { $min: "$_latency" },
+                            maxResponseTime: { $max: "$_latency" },
                             responseTimeCount: { $sum: 1 }
                         }
                     }
@@ -685,7 +700,15 @@ class ProjectService {
                         $match: {
                             projectId: id,
                             timestamp: { $gte: startTime.toISOString() },
-                            responseTime: { $exists: true, $type: "number", $gte: 0 }
+                            $or: [
+                                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
                         }
                     },
                     {
@@ -693,7 +716,7 @@ class ProjectService {
                             _id: {
                                 hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
                             },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: "$_latency" },
                             requestCount: { $sum: 1 }
                         }
                     },
@@ -717,7 +740,7 @@ class ProjectService {
                             },
                             count: { $sum: 1 },
                             lastOccurrence: { $max: "$timestamp" },
-                            avgResponseTime: { $avg: "$responseTime" }
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                         }
                     },
                     { $sort: { count: -1 } }
@@ -762,9 +785,9 @@ class ProjectService {
                             errorRequests: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             },
-                            avgResponseTime: { $avg: "$responseTime" },
-                            slowestRequests: { $max: "$responseTime" },
-                            fastestRequests: { $min: "$responseTime" }
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+                            slowestRequests: { $max: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+                            fastestRequests: { $min: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                         }
                     }
                 ]),
@@ -773,6 +796,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId: id,
+                            eventType: { $ne: "system" },
                             timestamp: { $gte: startTime.toISOString() }
                         }
                     },
@@ -785,7 +809,7 @@ class ProjectService {
                             errorLogs: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             },
-                            avgResponseTime: { $avg: "$responseTime" }
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                         }
                     },
                     { $sort: { "_id.day": 1 } }
@@ -795,6 +819,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId: id,
+                            eventType: { $ne: "system" },
                             timestamp: { $gte: startTime.toISOString() }
                         }
                     },
@@ -805,7 +830,7 @@ class ProjectService {
                                 dayOfWeek: { $dayOfWeek: { $toDate: "$timestamp" } }
                             },
                             requestCount: { $sum: 1 },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
                             errorCount: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             }
@@ -818,6 +843,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId: id,
+                            eventType: { $ne: "system" },
                             timestamp: { $gte: startTime.toISOString() }
                         }
                     },
@@ -825,7 +851,7 @@ class ProjectService {
                         $group: {
                             _id: "$service",
                             requestCount: { $sum: 1 },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
                             errorCount: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             },
@@ -839,6 +865,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId: id,
+                            eventType: { $ne: "system" },
                             timestamp: { $gte: startTime.toISOString() }
                         }
                     },
@@ -846,7 +873,7 @@ class ProjectService {
                         $group: {
                             _id: "$environment",
                             requestCount: { $sum: 1 },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
                             errorCount: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             }
@@ -854,12 +881,13 @@ class ProjectService {
                     },
                     { $sort: { requestCount: -1 } }
                 ]),
-                // Log trends (daily)
+                // Log trends (daily) — honor the request's timeRange
                 log_model_1.LogModel.aggregate([
                     {
                         $match: {
                             projectId: id,
-                            timestamp: { $gte: last30Days.toISOString() }
+                            eventType: { $ne: "system" },
+                            timestamp: { $gte: startTime.toISOString() }
                         }
                     },
                     {
@@ -871,17 +899,18 @@ class ProjectService {
                             errorLogs: {
                                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
                             },
-                            avgResponseTime: { $avg: "$responseTime" }
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                         }
                     },
                     { $sort: { "_id.date": 1 } }
                 ]),
-                // Error trends (daily)
+                // Error trends (daily) — honor the request's timeRange
                 log_model_1.LogModel.aggregate([
                     {
                         $match: {
                             projectId: id,
-                            timestamp: { $gte: last30Days.toISOString() },
+                            eventType: { $ne: "system" },
+                            timestamp: { $gte: startTime.toISOString() },
                             level: { $in: ["error", "fatal"] }
                         }
                     },
@@ -901,13 +930,21 @@ class ProjectService {
                     },
                     { $sort: { "_id.date": 1 } }
                 ]),
-                // Performance trends
+                // Performance trends — honor the request's timeRange
                 log_model_1.LogModel.aggregate([
                     {
                         $match: {
                             projectId: id,
-                            timestamp: { $gte: last30Days.toISOString() },
-                            responseTime: { $exists: true, $type: "number", $gte: 0 }
+                            timestamp: { $gte: startTime.toISOString() },
+                            $or: [
+                                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
                         }
                     },
                     {
@@ -915,7 +952,7 @@ class ProjectService {
                             _id: {
                                 date: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } }
                             },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: "$_latency" },
                             requestCount: { $sum: 1 }
                         }
                     },
@@ -926,6 +963,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId: id,
+                            eventType: { $ne: "system" },
                             timestamp: { $gte: startTime.toISOString() },
                             level: { $in: ["error", "fatal"] }
                         }
@@ -958,7 +996,7 @@ class ProjectService {
                                 hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
                             },
                             logVolume: { $sum: 1 },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
                             errorRate: {
                                 $avg: {
                                     $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0]
@@ -984,7 +1022,7 @@ class ProjectService {
                                 },
                                 totalActivity: { $sum: 1 },
                                 uniqueServices: { $addToSet: "$service" },
-                                avgResponseTime: { $avg: "$responseTime" }
+                                avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                             }
                         },
                         {
@@ -2532,6 +2570,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId,
+                            eventType: { $ne: "system" },
                             timestamp: {
                                 $gte: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
                             },
@@ -2542,16 +2581,10 @@ class ProjectService {
                             _id: null,
                             totalLogs: { $sum: 1 },
                             errorLogs: {
-                                $sum: { $cond: [{ $eq: ["$level", "error"] }, 1, 0] },
+                                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
                             },
                             avgResponseTime: {
-                                $avg: {
-                                    $cond: [
-                                        { $type: "$responseTime" },
-                                        "$responseTime",
-                                        null,
-                                    ],
-                                },
+                                $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] },
                             },
                         },
                     },
@@ -2561,6 +2594,7 @@ class ProjectService {
                     {
                         $match: {
                             projectId,
+                            eventType: { $ne: "system" },
                             timestamp: {
                                 $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
                             },
@@ -2576,7 +2610,7 @@ class ProjectService {
                             },
                             dailyLogs: { $sum: 1 },
                             dailyErrors: {
-                                $sum: { $cond: [{ $eq: ["$level", "error"] }, 1, 0] },
+                                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
                             },
                         },
                     },
@@ -2588,14 +2622,22 @@ class ProjectService {
                         $match: {
                             projectId,
                             timestamp: { $gte: startTime.toISOString() },
-                            responseTime: { $exists: true, $type: "number", $gte: 0 },
+                            $or: [
+                                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                            ],
+                        },
+                    },
+                    {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
                         },
                     },
                     {
                         $group: {
                             _id: null,
-                            responseTimes: { $push: "$responseTime" },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            responseTimes: { $push: "$_latency" },
+                            avgResponseTime: { $avg: "$_latency" },
                         },
                     },
                     {
@@ -2832,7 +2874,10 @@ class ProjectService {
                     $gte: startDate.toISOString(),
                     $lte: endDate.toISOString(),
                 },
-                responseTime: { $exists: true, $type: "number", $gte: 0 },
+                $or: [
+                    { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                    { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                ],
             };
             if (projectId) {
                 matchStage.projectId = projectId;
@@ -2857,6 +2902,11 @@ class ProjectService {
                 log_model_1.LogModel.aggregate([
                     { $match: matchStage },
                     {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+                        },
+                    },
+                    {
                         $group: {
                             _id: {
                                 $dateToString: {
@@ -2864,8 +2914,8 @@ class ProjectService {
                                     date: { $toDate: "$timestamp" },
                                 },
                             },
-                            responseTimes: { $push: "$responseTime" },
-                            avgResponseTime: { $avg: "$responseTime" },
+                            responseTimes: { $push: "$_latency" },
+                            avgResponseTime: { $avg: "$_latency" },
                             requestCount: { $sum: 1 },
                         },
                     },
@@ -2908,12 +2958,17 @@ class ProjectService {
                 log_model_1.LogModel.aggregate([
                     { $match: matchStage },
                     {
+                        $addFields: {
+                            _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+                        },
+                    },
+                    {
                         $group: {
                             _id: null,
-                            overallAvg: { $avg: "$responseTime" },
-                            bestTime: { $min: "$responseTime" },
-                            worstTime: { $max: "$responseTime" },
-                            responseTimes: { $push: "$responseTime" },
+                            overallAvg: { $avg: "$_latency" },
+                            bestTime: { $min: "$_latency" },
+                            worstTime: { $max: "$_latency" },
+                            responseTimes: { $push: "$_latency" },
                         },
                     },
                 ]),
@@ -3132,8 +3187,8 @@ class ProjectService {
                         responseTimes: {
                             $push: {
                                 $cond: [
-                                    { $type: "$responseTime" },
-                                    "$responseTime",
+                                    { $isNumber: "$data.network.duration" },
+                                    "$data.network.duration",
                                     null,
                                 ],
                             },
@@ -3148,8 +3203,8 @@ class ProjectService {
                                 },
                                 responseTime: {
                                     $cond: [
-                                        { $type: "$responseTime" },
-                                        "$responseTime",
+                                        { $isNumber: "$data.network.duration" },
+                                        "$data.network.duration",
                                         null,
                                     ],
                                 },
@@ -3594,13 +3649,16 @@ class ProjectService {
                     $match: {
                         projectId,
                         timestamp: { $gte: startTime.toISOString() },
-                        responseTime: { $exists: true, $type: "number", $gte: 0 },
+                        $or: [
+                            { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                            { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
+                        ],
                     },
                 },
                 {
                     $group: {
                         _id: null,
-                        avgResponseTime: { $avg: "$responseTime" },
+                        avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
                     },
                 },
             ]);

@@ -24,7 +24,7 @@ class NotificationService {
         email: {
             provider: process.env.EMAIL_PROVIDER
                 || (config_1.config.email.resendApiKey ? 'resend' : 'smtp'),
-            fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'alerts@apperio.dev',
+            fromEmail: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'Apperio <femi@apperio.dev>',
             fromName: process.env.FROM_NAME || 'Apperio',
         },
         webhook: {
@@ -455,6 +455,7 @@ class NotificationService {
                 html: options.html || options.text || '',
                 ...(options.cc?.length ? { cc: options.cc } : {}),
                 ...(options.bcc?.length ? { bcc: options.bcc } : {}),
+                ...(options.replyTo ? { replyTo: options.replyTo } : {}),
             });
             if (error) {
                 console.error('[Resend] Email send error:', error);

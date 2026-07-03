@@ -173,9 +173,12 @@ class MfaController {
                     message: "User not found",
                 });
             }
-            const authToken = jsonwebtoken_1.default.sign({ userId: user._id }, secret, {
-                expiresIn: "10h",
-            });
+            const authToken = jsonwebtoken_1.default.sign({
+                userId: user._id,
+                role: user.role,
+                betaAccess: user.betaAccess,
+                betaTier: user.betaTier,
+            }, secret, { expiresIn: "10h" });
             return res.status(200).json({
                 status: "success",
                 message: "MFA validation successful",

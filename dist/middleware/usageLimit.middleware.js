@@ -107,7 +107,6 @@ function checkUsageLimit(resource) {
                 projects: limits.maxProjects,
                 teamMembers: limits.maxTeamMembers,
                 alertRules: limits.maxAlertRules,
-                customDashboards: limits.maxCustomDashboards,
                 apiTokens: limits.maxApiTokens,
             };
             const limit = limitMap[resource];
@@ -143,7 +142,7 @@ function checkUsageLimit(resource) {
                     break;
                 }
                 default:
-                    // For alertRules, customDashboards, apiTokens we skip here
+                    // For alertRules, apiTokens we skip here
                     // as they are less critical. Let the service layer handle it.
                     return next();
             }

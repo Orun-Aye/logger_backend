@@ -282,6 +282,7 @@ class AnalyticsService {
     // ============================================================================
     static async getPerformanceTimeline(projectId, options) {
         const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+        // Query both performance and network events for a combined timeline
         const timeline = await log_model_1.LogModel.aggregate([
             {
                 $match: {
@@ -290,7 +291,7 @@ class AnalyticsService {
                         $gte: startDate.toISOString(),
                         $lte: endDate.toISOString(),
                     },
-                    eventType: "performance",
+                    eventType: { $in: ["performance", "network"] },
                 },
             },
             {
@@ -304,7 +305,12 @@ class AnalyticsService {
                     lcp: {
                         $avg: {
                             $cond: [
-                                { $eq: ["$data.performance.type", "navigation"] },
+                                {
+                                    $and: [
+                                        { $eq: ["$eventType", "performance"] },
+                                        { $eq: ["$data.performance.type", "navigation"] },
+                                    ],
+                                },
                                 "$data.performance.duration",
                                 null,
                             ],
@@ -313,13 +319,45 @@ class AnalyticsService {
                     fcp: {
                         $avg: {
                             $cond: [
-                                { $eq: ["$data.performance.type", "paint"] },
+                                {
+                                    $and: [
+                                        { $eq: ["$eventType", "performance"] },
+                                        { $eq: ["$data.performance.type", "paint"] },
+                                    ],
+                                },
                                 "$data.performance.duration",
                                 null,
                             ],
                         },
                     },
-                    ttfb: { $avg: "$data.performance.startTime" },
+                    ttfb: {
+                        $avg: {
+                            $cond: [
+                                { $eq: ["$eventType", "performance"] },
+                                "$data.performance.startTime",
+                                null,
+                            ],
+                        },
+                    },
+                    networkDurations: {
+                        $push: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $eq: ["$eventType", "network"] },
+                                        { $gt: ["$data.network.duration", null] },
+                                    ],
+                                },
+                                "$data.network.duration",
+                                "$$REMOVE",
+                            ],
+                        },
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    sortedNetworkDurations: { $sortArray: { input: "$networkDurations", sortBy: 1 } },
                 },
             },
             { $sort: { _id: 1 } },
@@ -329,6 +367,29 @@ class AnalyticsService {
                     lcp: { $round: ["$lcp", 0] },
                     fcp: { $round: ["$fcp", 0] },
                     ttfb: { $round: ["$ttfb", 0] },
+                    avg: {
+                        $round: [
+                            { $avg: "$networkDurations" },
+                            0,
+                        ],
+                    },
+                    p95: {
+                        $cond: [
+                            { $gt: [{ $size: "$sortedNetworkDurations" }, 0] },
+                            {
+                                $round: [
+                                    {
+                                        $arrayElemAt: [
+                                            "$sortedNetworkDurations",
+                                            { $floor: { $multiply: [{ $size: "$sortedNetworkDurations" }, 0.95] } },
+                                        ],
+                                    },
+                                    0,
+                                ],
+                            },
+                            null,
+                        ],
+                    },
                     _id: 0,
                 },
             },
@@ -574,8 +635,81 @@ class AnalyticsService {
         const avgLCP = vitalMap["lcp"] ?? null;
         const avgFCP = vitalMap["fcp"] ?? null;
         const avgCLS = vitalMap["cls"] ?? null;
+        // Query network events for response time stats
+        const networkStats = await log_model_1.LogModel.aggregate([
+            {
+                $match: {
+                    projectId,
+                    timestamp: timeFilter,
+                    eventType: "network",
+                    "data.network.duration": { $exists: true, $type: "number" },
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    avgResponseTime: { $avg: "$data.network.duration" },
+                    responseTimes: { $push: "$data.network.duration" },
+                },
+            },
+            {
+                $addFields: {
+                    sortedTimes: { $sortArray: { input: "$responseTimes", sortBy: 1 } },
+                },
+            },
+            {
+                $project: {
+                    avgResponseTime: { $round: ["$avgResponseTime", 0] },
+                    p95ResponseTime: {
+                        $round: [
+                            {
+                                $arrayElemAt: [
+                                    "$sortedTimes",
+                                    { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.95] } },
+                                ],
+                            },
+                            0,
+                        ],
+                    },
+                    _id: 0,
+                },
+            },
+        ]);
+        // Query error rate
+        const errorStats = await log_model_1.LogModel.aggregate([
+            {
+                $match: {
+                    projectId,
+                    timestamp: timeFilter,
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    errors: {
+                        $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
+                    },
+                },
+            },
+            {
+                $project: {
+                    errorRate: {
+                        $cond: [
+                            { $gt: ["$total", 0] },
+                            { $round: [{ $multiply: [{ $divide: ["$errors", "$total"] }, 100] }, 2] },
+                            0,
+                        ],
+                    },
+                    _id: 0,
+                },
+            },
+        ]);
+        const avgResponseTime = networkStats[0]?.avgResponseTime ?? null;
+        const p95ResponseTime = networkStats[0]?.p95ResponseTime ?? null;
+        const errorRate = errorStats[0]?.errorRate ?? null;
         if (avgLoadTime == null && avgLCP == null && avgFCP == null && avgCLS == null) {
-            return { score: 0, grade: "N/A", breakdown: {} };
+            return { score: 0, grade: "N/A", breakdown: {}, avgResponseTime, p95ResponseTime, errorRate };
         }
         // Calculate score (0-100)
         const scores = {
@@ -605,6 +739,9 @@ class AnalyticsService {
                 fcp: { score: scores.fcp, value: avgFCP != null ? Math.round(avgFCP) : null },
                 cls: { score: scores.cls, value: avgCLS != null ? avgCLS.toFixed(3) : null },
             },
+            avgResponseTime,
+            p95ResponseTime,
+            errorRate,
         };
     }
     static async getSlowestEndpoints(projectId, options) {
@@ -628,6 +765,12 @@ class AnalyticsService {
                     maxDuration: { $max: "$data.network.duration" },
                     calls: { $sum: 1 },
                     method: { $first: "$data.network.method" },
+                    responseTimes: { $push: "$data.network.duration" },
+                },
+            },
+            {
+                $addFields: {
+                    sortedTimes: { $sortArray: { input: "$responseTimes", sortBy: 1 } },
                 },
             },
             {
@@ -635,6 +778,17 @@ class AnalyticsService {
                     url: "$_id",
                     avgDuration: { $round: ["$avgDuration", 0] },
                     maxDuration: { $round: ["$maxDuration", 0] },
+                    p95: {
+                        $round: [
+                            {
+                                $arrayElemAt: [
+                                    "$sortedTimes",
+                                    { $floor: { $multiply: [{ $size: "$sortedTimes" }, 0.95] } },
+                                ],
+                            },
+                            0,
+                        ],
+                    },
                     calls: 1,
                     method: 1,
                     _id: 0,
@@ -682,27 +836,50 @@ class AnalyticsService {
     }
     static async getActivityStats(projectId, options) {
         const { startDate, endDate } = this.parseTimeRange(options.timeRange);
-        const stats = await log_model_1.LogModel.aggregate([
-            {
-                $match: {
-                    projectId,
-                    timestamp: {
-                        $gte: startDate.toISOString(),
-                        $lte: endDate.toISOString(),
+        const matchStage = {
+            $match: {
+                projectId,
+                timestamp: {
+                    $gte: startDate.toISOString(),
+                    $lte: endDate.toISOString(),
+                },
+            },
+        };
+        const [levelStats, serviceStats] = await Promise.all([
+            log_model_1.LogModel.aggregate([
+                matchStage,
+                {
+                    $group: {
+                        _id: "$level",
+                        count: { $sum: 1 },
                     },
                 },
-            },
-            {
-                $group: {
-                    _id: "$level",
-                    count: { $sum: 1 },
+            ]),
+            log_model_1.LogModel.distinct("service", {
+                projectId,
+                timestamp: {
+                    $gte: startDate.toISOString(),
+                    $lte: endDate.toISOString(),
                 },
-            },
+            }),
         ]);
-        return stats.reduce((acc, stat) => {
+        const levelCounts = levelStats.reduce((acc, stat) => {
             acc[stat._id] = stat.count;
             return acc;
         }, {});
+        const totalEvents = Object.values(levelCounts).reduce((sum, count) => sum + count, 0);
+        const errorCount = (levelCounts["error"] || 0) + (levelCounts["fatal"] || 0);
+        const errorRate = totalEvents > 0 ? errorCount / totalEvents : 0;
+        const activeServices = serviceStats.filter(Boolean).length;
+        return {
+            ...levelCounts,
+            totalEvents,
+            eventsToday: totalEvents,
+            activeServices,
+            services: activeServices,
+            errorRate,
+            errorCount,
+        };
     }
     static async getFilterValues(projectId) {
         const [levels, eventTypes, services, environments] = await Promise.all([
@@ -1542,8 +1719,8 @@ class AnalyticsService {
                 error: currentMap["error"] || 0,
                 warn: currentMap["warn"] || 0,
                 info: currentMap["info"] || 0,
-                log: currentMap["log"] || 0,
                 debug: currentMap["debug"] || 0,
+                trace: currentMap["trace"] || 0,
             },
             changes: {
                 total: this.calculateChange(currentTotal, previousTotal),
@@ -1626,17 +1803,17 @@ class AnalyticsService {
             {
                 $group: {
                     _id: "$_id.time",
-                    errors: {
+                    error: {
                         $sum: { $cond: [{ $eq: ["$_id.level", "error"] }, "$count", 0] },
                     },
-                    warnings: {
+                    warn: {
                         $sum: { $cond: [{ $eq: ["$_id.level", "warn"] }, "$count", 0] },
                     },
                     info: {
                         $sum: { $cond: [{ $eq: ["$_id.level", "info"] }, "$count", 0] },
                     },
-                    log: {
-                        $sum: { $cond: [{ $eq: ["$_id.level", "log"] }, "$count", 0] },
+                    debug: {
+                        $sum: { $cond: [{ $eq: ["$_id.level", "debug"] }, "$count", 0] },
                     },
                     total: { $sum: "$count" },
                 },
@@ -1644,11 +1821,11 @@ class AnalyticsService {
             { $sort: { _id: 1 } },
             {
                 $project: {
-                    time: "$_id",
-                    errors: 1,
-                    warnings: 1,
+                    timestamp: "$_id",
+                    error: 1,
+                    warn: 1,
                     info: 1,
-                    log: 1,
+                    debug: 1,
                     total: 1,
                     _id: 0,
                 },
@@ -1863,13 +2040,23 @@ class AnalyticsService {
                         $gte: startDate.toISOString(),
                         $lte: endDate.toISOString(),
                     },
-                    "context.sessionId": { $exists: true },
+                    $or: [
+                        { "context.sessionId": { $exists: true, $ne: null } },
+                        { sessionId: { $exists: true, $ne: null } },
+                    ],
                 },
             },
-            { $sort: { "context.sessionId": 1, timestamp: 1 } },
+            {
+                $addFields: {
+                    _resolvedSessionId: {
+                        $ifNull: ["$context.sessionId", "$sessionId"],
+                    },
+                },
+            },
+            { $sort: { _resolvedSessionId: 1, timestamp: 1 } },
             {
                 $group: {
-                    _id: "$context.sessionId",
+                    _id: "$_resolvedSessionId",
                     pages: {
                         $push: { $ifNull: ["$data.url", "$url"] },
                     },

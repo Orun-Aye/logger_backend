@@ -52,6 +52,9 @@ import integrationRoutes from "./routes/integration.routes";
 import integrationsRoutes from "./routes/integrations.routes";
 // GitHub OAuth + repo linking + commits proxy
 import githubIntegrationRoutes from "./routes/githubIntegration.routes";
+// Phase 7 Change Intelligence: GitHub App webhooks + change feed + error groups
+import githubWebhookRoutes from "./routes/githubWebhook.routes";
+import changeRoutes from "./routes/change.routes";
 // Admin dashboard routes
 import adminRoutes from "./routes/admin.routes";
 // Billing & Subscription routes
@@ -97,6 +100,10 @@ const logIngestionCors = cors({
 
 // Handle preflight OPTIONS requests globally (before any route matching)
 app.options("/{*path}", cors({ origin: true, credentials: true }));
+
+// Phase 7: GitHub App webhooks need the RAW body for HMAC signature
+// verification, so this router mounts BEFORE the global JSON parser.
+app.use("/api/v1/webhooks", githubWebhookRoutes);
 
 // Phase 1.3 Global Middleware (order matters!)
 app.use(express.json({ limit: '5mb' }));
@@ -554,6 +561,9 @@ app.use("/api/v1/integrations/manage", restrictedCors, integrationsRoutes);
 // GitHub OAuth + repo linking. Mounted at /api/v1 because the route file
 // itself uses absolute paths (`/integrations/github/...`, `/projects/:id/...`).
 app.use("/api/v1", restrictedCors, githubIntegrationRoutes);
+
+// Phase 7 Change Intelligence: change feed, deployments, error groups
+app.use("/api/v1", restrictedCors, changeRoutes);
 // Admin dashboard routes
 app.use("/api/v1/admin", restrictedCors, adminRoutes);
 // Billing & Subscription routes

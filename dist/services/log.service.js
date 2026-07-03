@@ -6,6 +6,8 @@ const log_model_1 = require("../models/log.model"); // Import ILog for type safe
 const mongoose_1 = require("mongoose");
 const server_1 = require("../server");
 const alert_service_1 = require("./alert.service");
+const fingerprint_service_1 = require("./fingerprint.service");
+const errorGroup_service_1 = require("./errorGroup.service");
 const stream_1 = require("stream");
 // Custom error classes for better error handling
 class LogNotFoundError extends Error {
@@ -168,9 +170,24 @@ class LogService {
                 ingestionLatency,
                 ingestionSuccess: true,
             };
+            // Phase 7: fingerprint error events so they can be grouped
+            const isErrorEvent = data.level === "error" ||
+                data.level === "fatal" ||
+                data.eventType === "error";
+            if (isErrorEvent && data.eventType !== "system") {
+                newLogData.fingerprint = fingerprint_service_1.FingerprintService.compute({
+                    errorName: data.error?.name,
+                    message: data.error?.message || data.message,
+                    stack: data.error?.stack,
+                });
+            }
             const newLog = await log_model_1.LogModel.create(newLogData);
             // Fire-and-forget alert evaluation to not block ingestion
             alert_service_1.AlertService.evaluateLogAndTrigger(newLog.toObject()).catch(() => { });
+            // Phase 7: fire-and-forget error-group rollup (new-group notifications)
+            if (newLogData.fingerprint) {
+                errorGroup_service_1.ErrorGroupService.recordError(newLog.toObject()).catch(() => { });
+            }
             if (server_1.globalServices.dashboardWebSocketService) {
                 server_1.globalServices.dashboardWebSocketService.broadcastToProject(data.projectId, "NEW_LOG", { log: newLog.toObject() });
             }
@@ -815,7 +832,6 @@ class LogService {
                             "eventType",
                             "url",
                             "userAgent",
-                            "ingestionLatency",
                             "error.name",
                             "error.message",
                             "error.stack",
@@ -850,7 +866,6 @@ class LogService {
                         escape(doc.eventType),
                         escape(doc.url),
                         escape(doc.userAgent),
-                        escape(doc.ingestionLatency),
                         escape(doc.error?.name),
                         escape(doc.error?.message),
                         escape(doc.error?.stack),

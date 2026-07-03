@@ -6,9 +6,9 @@
  * every single model with realistic, fully-populated documents so that every
  * dashboard page, settings page, and analytics view has data to display.
  *
- * Models seeded (14 total):
+ * Models seeded (13 total):
  *   User (found), Project (created), Log, AlertRule, AlertEvent,
- *   EscalationPolicy, Notification, UserPreference, CustomDashboard,
+ *   EscalationPolicy, Notification, UserPreference,
  *   SavedSearch, Anomaly, MaintenanceWindow, SourceMap, SDKConfig
  *
  * Usage:
@@ -27,7 +27,6 @@ const alertEvent_model_1 = require("../models/alertEvent.model");
 const escalationPolicy_model_1 = require("../models/escalationPolicy.model");
 const notification_model_1 = __importDefault(require("../models/notification.model"));
 const userPreference_model_1 = require("../models/userPreference.model");
-const customDashboard_model_1 = require("../models/customDashboard.model");
 const savedSearch_model_1 = require("../models/savedSearch.model");
 const anomaly_model_1 = require("../models/anomaly.model");
 const maintenanceWindow_model_1 = require("../models/maintenanceWindow.model");
@@ -730,140 +729,6 @@ function makeNotifications(userId) {
         },
     ];
 }
-function makeCustomDashboards(userId, projectIdStr) {
-    return [
-        {
-            userId,
-            name: "Production Overview",
-            description: "Real-time production health metrics with error tracking, performance, and network status",
-            isDefault: true,
-            isShared: true,
-            tags: ["production", "overview", "shared"],
-            widgets: [
-                {
-                    id: "w-1", type: "counter", title: "Total Errors (24h)",
-                    config: { metric: "error-count", projectId: projectIdStr, timeRange: "24h", eventType: "error" },
-                    layout: { x: 0, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-2", type: "counter", title: "Error Rate",
-                    config: { metric: "error-rate", projectId: projectIdStr, timeRange: "24h" },
-                    layout: { x: 3, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-3", type: "gauge", title: "Health Score",
-                    config: { metric: "health-score", projectId: projectIdStr, timeRange: "1h" },
-                    layout: { x: 6, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-4", type: "counter", title: "Active Alerts",
-                    config: { metric: "active-alerts", projectId: projectIdStr, timeRange: "24h" },
-                    layout: { x: 9, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-5", type: "chart", title: "Log Volume Timeline",
-                    config: { metric: "log-volume", projectId: projectIdStr, timeRange: "24h", chartType: "area", refreshInterval: 60000 },
-                    layout: { x: 0, y: 2, w: 8, h: 4 },
-                },
-                {
-                    id: "w-6", type: "alert-list", title: "Recent Alerts",
-                    config: { projectId: projectIdStr, timeRange: "24h" },
-                    layout: { x: 8, y: 2, w: 4, h: 4 },
-                },
-                {
-                    id: "w-7", type: "chart", title: "Error Breakdown by Service",
-                    config: { metric: "error-count", projectId: projectIdStr, timeRange: "7d", chartType: "bar" },
-                    layout: { x: 0, y: 6, w: 6, h: 3 },
-                },
-                {
-                    id: "w-8", type: "sparkline", title: "Network Requests",
-                    config: { metric: "network-requests", projectId: projectIdStr, timeRange: "24h", eventType: "network" },
-                    layout: { x: 6, y: 6, w: 6, h: 3 },
-                },
-            ],
-        },
-        {
-            userId,
-            name: "Performance & Web Vitals",
-            description: "Core Web Vitals monitoring with LCP, CLS, INP, FCP, and TTFB tracking",
-            isDefault: false,
-            isShared: true,
-            tags: ["performance", "web-vitals"],
-            widgets: [
-                {
-                    id: "w-p1", type: "counter", title: "LCP (p75)",
-                    config: { metric: "perf-lcp", projectId: projectIdStr, timeRange: "24h", eventType: "web-vital" },
-                    layout: { x: 0, y: 0, w: 4, h: 2 },
-                },
-                {
-                    id: "w-p2", type: "counter", title: "CLS (p75)",
-                    config: { metric: "perf-cls", projectId: projectIdStr, timeRange: "24h", eventType: "web-vital" },
-                    layout: { x: 4, y: 0, w: 4, h: 2 },
-                },
-                {
-                    id: "w-p3", type: "counter", title: "INP (p75)",
-                    config: { metric: "perf-inp", projectId: projectIdStr, timeRange: "24h", eventType: "web-vital" },
-                    layout: { x: 8, y: 0, w: 4, h: 2 },
-                },
-                {
-                    id: "w-p4", type: "chart", title: "Web Vitals Over Time",
-                    config: { metric: "perf-lcp", projectId: projectIdStr, timeRange: "7d", chartType: "line" },
-                    layout: { x: 0, y: 2, w: 12, h: 4 },
-                },
-                {
-                    id: "w-p5", type: "table", title: "Slowest Endpoints",
-                    config: { metric: "network-avg-duration", projectId: projectIdStr, timeRange: "24h", eventType: "network" },
-                    layout: { x: 0, y: 6, w: 6, h: 3 },
-                },
-                {
-                    id: "w-p6", type: "heatmap", title: "Response Time Heatmap",
-                    config: { metric: "network-p95-duration", projectId: projectIdStr, timeRange: "7d", eventType: "network" },
-                    layout: { x: 6, y: 6, w: 6, h: 3 },
-                },
-            ],
-        },
-        {
-            userId,
-            name: "User Behavior",
-            description: "User interactions, pageviews, and console activity analysis",
-            isDefault: false,
-            isShared: false,
-            tags: ["user-behavior", "interactions", "pageviews"],
-            widgets: [
-                {
-                    id: "w-u1", type: "counter", title: "Total Interactions",
-                    config: { metric: "interaction-total", projectId: projectIdStr, timeRange: "24h", eventType: "interaction" },
-                    layout: { x: 0, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-u2", type: "counter", title: "Clicks",
-                    config: { metric: "interaction-clicks", projectId: projectIdStr, timeRange: "24h", eventType: "interaction" },
-                    layout: { x: 3, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-u3", type: "counter", title: "Pageviews",
-                    config: { metric: "pageview-total", projectId: projectIdStr, timeRange: "24h", eventType: "pageview" },
-                    layout: { x: 6, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-u4", type: "counter", title: "Console Errors",
-                    config: { metric: "console-errors", projectId: projectIdStr, timeRange: "24h", eventType: "console" },
-                    layout: { x: 9, y: 0, w: 3, h: 2 },
-                },
-                {
-                    id: "w-u5", type: "chart", title: "Interaction Timeline",
-                    config: { metric: "interaction-total", projectId: projectIdStr, timeRange: "7d", chartType: "area" },
-                    layout: { x: 0, y: 2, w: 6, h: 4 },
-                },
-                {
-                    id: "w-u6", type: "chart", title: "Top Pages",
-                    config: { metric: "pageview-total", projectId: projectIdStr, timeRange: "7d", chartType: "bar", eventType: "pageview" },
-                    layout: { x: 6, y: 2, w: 6, h: 4 },
-                },
-            ],
-        },
-    ];
-}
 function makeSavedSearches(projectId, userId) {
     return [
         {
@@ -1204,7 +1069,6 @@ async function seed() {
             alertEvent_model_1.AlertEventModel.deleteMany({ projectId: pid }),
             escalationPolicy_model_1.EscalationPolicyModel.deleteMany({ projectId: pid }),
             notification_model_1.default.deleteMany({ userId }),
-            customDashboard_model_1.CustomDashboardModel.deleteMany({ userId }),
             savedSearch_model_1.SavedSearchModel.deleteMany({ projectId: pid }),
             anomaly_model_1.AnomalyModel.deleteMany({ projectId: pidStr }),
             maintenanceWindow_model_1.MaintenanceWindowModel.deleteMany({ projectId: pid }),
@@ -1218,7 +1082,7 @@ async function seed() {
     console.log(`Creating project: "${PROJECT_NAME}"...`);
     const project = await project_model_1.ProjectModel.create({
         name: PROJECT_NAME,
-        description: "Full-featured demo project for Apperio observability platform. Contains realistic data across all 7 event types, distributed traces, alert rules with escalation policies, anomaly detection, maintenance windows, source maps, SDK configuration, saved searches, custom dashboards, and user notifications.",
+        description: "Full-featured demo project for Apperio observability platform. Contains realistic data across all 7 event types, distributed traces, alert rules with escalation policies, anomaly detection, maintenance windows, source maps, SDK configuration, saved searches, and user notifications.",
         apiKey: randomApiKey(),
         ownerId: userId,
         teamMembers: [],
@@ -1336,11 +1200,6 @@ async function seed() {
     console.log("Creating user preferences...");
     await userPreference_model_1.UserPreferenceModel.findOneAndUpdate({ userId }, { userId, favoriteProjects: [projectId] }, { upsert: true, new: true });
     console.log("   Created user preferences (1 favorite project)");
-    // ── Custom Dashboards ────────────────────────────────────────────────
-    console.log("Creating custom dashboards...");
-    const dashboards = makeCustomDashboards(userId, projectIdStr);
-    const insertedDashboards = await customDashboard_model_1.CustomDashboardModel.insertMany(dashboards);
-    console.log(`   Created ${insertedDashboards.length} custom dashboards (${insertedDashboards.reduce((sum, d) => sum + d.widgets.length, 0)} widgets total)`);
     // ── Saved Searches ───────────────────────────────────────────────────
     console.log("Creating saved searches...");
     const searches = makeSavedSearches(projectId, userId);
@@ -1403,7 +1262,6 @@ async function seed() {
     console.log(`    Alert Events:     ${alertEvents.length} (all 4 statuses)`);
     console.log(`    Escalation:       ${insertedPolicies.length} policies`);
     console.log(`    Notifications:    ${notifications.length}`);
-    console.log(`    Custom Dashboards:${insertedDashboards.length} (${insertedDashboards.reduce((s, d) => s + d.widgets.length, 0)} widgets)`);
     console.log(`    Saved Searches:   ${insertedSearches.length}`);
     console.log(`    Anomalies:        ${insertedAnomalies.length}`);
     console.log(`    Maint. Windows:   ${insertedWindows.length} (2 past, 2 upcoming)`);

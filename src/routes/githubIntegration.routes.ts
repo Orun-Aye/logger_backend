@@ -24,6 +24,13 @@ router.get(
   GithubIntegrationController.getStatus,
 );
 
+// GitHub App installation status (Phase 7 Change Intelligence)
+router.get(
+  "/integrations/github/app-status",
+  verifyToken,
+  GithubIntegrationController.getAppStatus,
+);
+
 router.delete(
   "/integrations/github/disconnect",
   verifyToken,

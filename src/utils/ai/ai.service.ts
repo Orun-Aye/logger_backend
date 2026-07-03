@@ -253,4 +253,217 @@ export class AIService {
       return null;
     }
   }
+
+  // ------------------------------------------------------------------
+  // Change Intelligence (Phase 7)
+  // ------------------------------------------------------------------
+
+  /**
+   * Summarize a batch of commits (one push) into plain-English one-liners.
+   * Returns null when AI is unavailable or the response cannot be parsed.
+   */
+  static async summarizeCommitBatch(
+    commits: Array<{ sha: string; message: string; diffExcerpt: string }>,
+    projectId: string
+  ): Promise<Array<{ sha: string; summary: string; technicalSummary: string }> | null> {
+    const client = this.getClient();
+    if (!client || !this.checkRateLimit(projectId)) return null;
+
+    const input = commits
+      .map(
+        (c) =>
+          `### Commit ${c.sha}\nMessage: ${c.message}\n\nDiff excerpt:\n${c.diffExcerpt || "(no diff available)"}`
+      )
+      .join("\n\n");
+
+    try {
+      const response = await client.messages.create({
+        model: config.anthropic.model,
+        max_tokens: 2048,
+        system:
+          "You are Apperio, an observability platform that explains code changes to app owners. " +
+          "For each commit, write two summaries of what actually changed in the app:\n" +
+          "1. summary: one sentence in plain English a NON-TECHNICAL founder understands. " +
+          "Describe the user-visible or practical effect (e.g. 'Fixed the checkout button not responding on mobile'). " +
+          "No jargon, no file names, no function names.\n" +
+          "2. technicalSummary: one sentence for developers naming the key components touched.\n" +
+          "Base your answer on the diff, not just the commit message — commit messages can be wrong. " +
+          "Return ONLY a JSON array of objects with keys: sha, summary, technicalSummary. No other text.",
+        messages: [{ role: "user", content: input }],
+      });
+
+      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
+      if (!text) return null;
+
+      try {
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        if (!Array.isArray(parsed)) return null;
+        return parsed.filter(
+          (item) => item && typeof item.sha === "string" && typeof item.summary === "string"
+        );
+      } catch {
+        logger.warn("Failed to parse AI commit summaries", { projectId });
+        return null;
+      }
+    } catch (error) {
+      logger.error("AI summarizeCommitBatch failed", { error, projectId });
+      return null;
+    }
+  }
+
+  /**
+   * Longer plain-English explanation of a single commit ("Explain this change").
+   */
+  static async explainCommit(
+    commit: { sha: string; message: string; diffExcerpt: string },
+    projectId: string
+  ): Promise<string | null> {
+    const client = this.getClient();
+    if (!client || !this.checkRateLimit(projectId)) return null;
+
+    try {
+      const response = await client.messages.create({
+        model: config.anthropic.model,
+        max_tokens: 1024,
+        system:
+          "You are Apperio, an observability platform that explains code changes to app owners. " +
+          "Explain this commit to someone who does not read code: what changed, why it likely changed, " +
+          "and what (if anything) the app owner should watch out for. " +
+          "Use short paragraphs, plain language, no code snippets, no file paths. Under 200 words.",
+        messages: [
+          {
+            role: "user",
+            content: `Commit message: ${commit.message}\n\nDiff excerpt:\n${commit.diffExcerpt || "(no diff available)"}`,
+          },
+        ],
+      });
+
+      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
+      return text;
+    } catch (error) {
+      logger.error("AI explainCommit failed", { error, projectId });
+      return null;
+    }
+  }
+
+  /**
+   * Draft a GitHub issue (title + body) from an error group's context.
+   * Returns null when AI is unavailable; callers fall back to a template.
+   */
+  static async draftIssueFromError(
+    errorContext: {
+      title: string;
+      message: string;
+      stack?: string;
+      count: number;
+      sessionCount: number;
+      firstSeen: string;
+      lastSeen: string;
+      environments: string[];
+      releaseFirstSeen?: string;
+      breadcrumbs?: string[];
+      suspectCommits?: Array<{ sha: string; message?: string; rationale?: string }>;
+      apperioUrl: string;
+    },
+    projectId: string
+  ): Promise<{ title: string; body: string } | null> {
+    const client = this.getClient();
+    if (!client || !this.checkRateLimit(projectId)) return null;
+
+    try {
+      const response = await client.messages.create({
+        model: config.anthropic.model,
+        max_tokens: 1536,
+        system:
+          "You are Apperio, an observability platform. Draft a high-quality GitHub issue for this " +
+          "production error so a developer (or AI coding agent) can fix it without asking questions. " +
+          "The issue must contain: a clear title (max 80 chars, imperative, no emoji); " +
+          "a body in GitHub markdown with sections: Summary (plain English, 2-3 sentences), " +
+          "Impact (occurrences, users affected, environments, first/last seen), " +
+          "Stack trace (fenced code block, trimmed to the relevant frames), " +
+          "Possible cause (only if suspect commits are provided — reference them by short sha), " +
+          "and a final line linking back to Apperio using the provided URL. " +
+          'Return ONLY a JSON object: {"title": "...", "body": "..."}. No other text.',
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify(errorContext, null, 2),
+          },
+        ],
+      });
+
+      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
+      if (!text) return null;
+
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        if (typeof parsed?.title === "string" && typeof parsed?.body === "string") {
+          return { title: parsed.title, body: parsed.body };
+        }
+        return null;
+      } catch {
+        logger.warn("Failed to parse AI issue draft", { projectId });
+        return null;
+      }
+    } catch (error) {
+      logger.error("AI draftIssueFromError failed", { error, projectId });
+      return null;
+    }
+  }
+
+  /**
+   * Rank candidate commits by likelihood of causing an error (suspect commits).
+   */
+  static async rankSuspectCommits(
+    input: {
+      errorTitle: string;
+      stack?: string;
+      candidates: Array<{ sha: string; message: string; files: string[] }>;
+    },
+    projectId: string
+  ): Promise<Array<{ sha: string; score: number; rationale: string }> | null> {
+    const client = this.getClient();
+    if (!client || !this.checkRateLimit(projectId)) return null;
+
+    try {
+      const response = await client.messages.create({
+        model: config.anthropic.model,
+        max_tokens: 1024,
+        system:
+          "You are Apperio, an observability platform. Given an error and a list of recent commits " +
+          "(message + touched files), rank which commits most likely introduced the error. " +
+          "Score 0-100 (100 = almost certainly the cause). Only include commits with score >= 30. " +
+          "rationale: one sentence explaining the connection, phrased as a suggestion, never as blame. " +
+          "Return ONLY a JSON array of {sha, score, rationale}, highest score first, max 3 items.",
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify(input, null, 2),
+          },
+        ],
+      });
+
+      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
+      if (!text) return null;
+
+      try {
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        return Array.isArray(parsed)
+          ? parsed.filter((s) => s && typeof s.sha === "string" && typeof s.score === "number")
+          : null;
+      } catch {
+        return null;
+      }
+    } catch (error) {
+      logger.error("AI rankSuspectCommits failed", { error, projectId });
+      return null;
+    }
+  }
 }
