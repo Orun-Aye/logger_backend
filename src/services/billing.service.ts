@@ -7,7 +7,6 @@ import {
 } from "../models/subscription.model";
 import { ProjectModel } from "../models/project.model";
 import { AlertRuleModel } from "../models/alertRule.model";
-import { CustomDashboardModel } from "../models/customDashboard.model";
 import { ApiTokenModel } from "../models/apiToken.model";
 import {
   PLANS,
@@ -44,7 +43,6 @@ export interface UsageData {
     projects: number;
     teamMembers: number;
     alertRules: number;
-    customDashboards: number;
     apiTokens: number;
   };
   percentages: {
@@ -53,7 +51,6 @@ export interface UsageData {
     projects: number;
     teamMembers: number;
     alertRules: number;
-    customDashboards: number;
     apiTokens: number;
   };
 }
@@ -213,7 +210,7 @@ export class BillingService {
     const userObjId = new Types.ObjectId(userId);
 
     // Count actual resource usage in parallel
-    const [projectCount, teamMemberCount, alertRuleCount, customDashboardCount, apiTokenCount] =
+    const [projectCount, teamMemberCount, alertRuleCount, apiTokenCount] =
       await Promise.all([
         // Projects owned by user
         ProjectModel.countDocuments({ ownerId: userObjId, isActive: true }),
@@ -221,8 +218,6 @@ export class BillingService {
         this.countTeamMembers(userId),
         // Alert rules across user's projects
         this.countAlertRules(userId),
-        // Custom dashboards
-        CustomDashboardModel.countDocuments({ userId: userObjId }),
         // API tokens
         ApiTokenModel.countDocuments({ userId: userObjId, isActive: true }),
       ]);
@@ -233,7 +228,6 @@ export class BillingService {
       projects: projectCount,
       teamMembers: teamMemberCount,
       alertRules: alertRuleCount,
-      customDashboards: customDashboardCount,
       apiTokens: apiTokenCount,
     };
 
@@ -243,10 +237,6 @@ export class BillingService {
       projects: getUsagePercentage(usage.projects, limits.maxProjects),
       teamMembers: getUsagePercentage(usage.teamMembers, limits.maxTeamMembers),
       alertRules: getUsagePercentage(usage.alertRules, limits.maxAlertRules),
-      customDashboards: getUsagePercentage(
-        usage.customDashboards,
-        limits.maxCustomDashboards
-      ),
       apiTokens: getUsagePercentage(usage.apiTokens, limits.maxApiTokens),
     };
 
@@ -387,10 +377,6 @@ export class BillingService {
       case "alertRules":
         current = usage.alertRules;
         limit = limits.maxAlertRules;
-        break;
-      case "customDashboards":
-        current = usage.customDashboards;
-        limit = limits.maxCustomDashboards;
         break;
       case "apiTokens":
         current = usage.apiTokens;

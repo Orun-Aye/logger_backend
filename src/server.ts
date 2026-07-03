@@ -30,7 +30,6 @@ import userPreferenceRoutes from "./routes/userPreference.routes";
 // Phase 2.2 routes
 import escalationPolicyRoutes from "./routes/escalationPolicy.routes";
 import maintenanceWindowRoutes from "./routes/maintenanceWindow.routes";
-import customDashboardRoutes from "./routes/customDashboard.routes";
 // Phase 2.3 routes
 import funnelRoutes from "./routes/funnel.routes";
 import regressionRoutes from "./routes/regression.routes";
@@ -51,6 +50,8 @@ import replayRoutes from "./routes/replay.routes";
 import integrationRoutes from "./routes/integration.routes";
 // Third-party integrations management routes
 import integrationsRoutes from "./routes/integrations.routes";
+// GitHub OAuth + repo linking + commits proxy
+import githubIntegrationRoutes from "./routes/githubIntegration.routes";
 // Admin dashboard routes
 import adminRoutes from "./routes/admin.routes";
 // Billing & Subscription routes
@@ -532,7 +533,6 @@ app.use("/api/v1/preferences", restrictedCors, userPreferenceRoutes);
 // Phase 2.2 routes
 app.use("/api/v1/escalation-policies", restrictedCors, escalationPolicyRoutes);
 app.use("/api/v1/maintenance-windows", restrictedCors, maintenanceWindowRoutes);
-app.use("/api/v1/custom-dashboards", restrictedCors, customDashboardRoutes);
 // Phase 2.3 routes
 app.use("/api/v1/funnels", restrictedCors, funnelRoutes);
 app.use("/api/v1/regressions", restrictedCors, regressionRoutes);
@@ -551,6 +551,9 @@ app.use("/api/v1/organizations", restrictedCors, organizationRoutes);
 app.use("/api/v1/integrations", restrictedCors, integrationRoutes);
 // Third-party integrations management
 app.use("/api/v1/integrations/manage", restrictedCors, integrationsRoutes);
+// GitHub OAuth + repo linking. Mounted at /api/v1 because the route file
+// itself uses absolute paths (`/integrations/github/...`, `/projects/:id/...`).
+app.use("/api/v1", restrictedCors, githubIntegrationRoutes);
 // Admin dashboard routes
 app.use("/api/v1/admin", restrictedCors, adminRoutes);
 // Billing & Subscription routes

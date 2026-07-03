@@ -401,14 +401,14 @@ export class ProjectService {
               projectId: { $in: projectIds },
               timestamp: { $gte: metricsStartTime.toISOString() },
               $or: [
-                { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-                { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
               ],
             },
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             },
           },
           {
@@ -566,8 +566,8 @@ export class ProjectService {
               recentAvgResponseTime: {
                 $avg: {
                   $cond: [
-                    { $and: ["$isRecent", { $type: "$responseTime" }] },
-                    "$responseTime",
+                    { $and: ["$isRecent", { $isNumber: "$data.network.duration" }] },
+                    "$data.network.duration",
                     null,
                   ],
                 },
@@ -578,10 +578,10 @@ export class ProjectService {
                     {
                       $and: [
                         { $not: "$isRecent" },
-                        { $type: "$responseTime" },
+                        { $isNumber: "$data.network.duration" },
                       ],
                     },
-                    "$responseTime",
+                    "$data.network.duration",
                     null,
                   ],
                 },
@@ -862,8 +862,6 @@ export class ProjectService {
       const now = new Date();
       const startTime = new Date(now.getTime() - timeRange * 60 * 60 * 1000);
       const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
       // Comprehensive analytics queries
       const [
@@ -923,14 +921,14 @@ export class ProjectService {
               projectId: id,
               timestamp: { $gte: startTime.toISOString() },
               $or: [
-                { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-                { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
               ]
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             }
           },
           {
@@ -951,14 +949,14 @@ export class ProjectService {
               projectId: id,
               timestamp: { $gte: startTime.toISOString() },
               $or: [
-                { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-                { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
               ]
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             }
           },
           {
@@ -991,7 +989,7 @@ export class ProjectService {
               },
               count: { $sum: 1 },
               lastOccurrence: { $max: "$timestamp" },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } }
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
             }
           },
           { $sort: { count: -1 } }
@@ -1038,9 +1036,9 @@ export class ProjectService {
               errorRequests: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
-              slowestRequests: { $max: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
-              fastestRequests: { $min: { $ifNull: ["$ingestionLatency", "$responseTime"] } }
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              slowestRequests: { $max: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              fastestRequests: { $min: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
             }
           }
         ]),
@@ -1063,7 +1061,7 @@ export class ProjectService {
               errorLogs: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } }
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
             }
           },
           { $sort: { "_id.day": 1 } }
@@ -1085,7 +1083,7 @@ export class ProjectService {
                 dayOfWeek: { $dayOfWeek: { $toDate: "$timestamp" } }
               },
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               }
@@ -1107,7 +1105,7 @@ export class ProjectService {
             $group: {
               _id: "$service",
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
@@ -1130,7 +1128,7 @@ export class ProjectService {
             $group: {
               _id: "$environment",
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               }
@@ -1139,13 +1137,13 @@ export class ProjectService {
           { $sort: { requestCount: -1 } }
         ]),
 
-        // Log trends (daily)
+        // Log trends (daily) — honor the request's timeRange
         LogModel.aggregate([
           {
             $match: {
               projectId: id,
               eventType: { $ne: "system" },
-              timestamp: { $gte: last30Days.toISOString() }
+              timestamp: { $gte: startTime.toISOString() }
             }
           },
           {
@@ -1157,19 +1155,19 @@ export class ProjectService {
               errorLogs: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } }
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
             }
           },
           { $sort: { "_id.date": 1 } }
         ]),
 
-        // Error trends (daily)
+        // Error trends (daily) — honor the request's timeRange
         LogModel.aggregate([
           {
             $match: {
               projectId: id,
               eventType: { $ne: "system" },
-              timestamp: { $gte: last30Days.toISOString() },
+              timestamp: { $gte: startTime.toISOString() },
               level: { $in: ["error", "fatal"] }
             }
           },
@@ -1190,21 +1188,21 @@ export class ProjectService {
           { $sort: { "_id.date": 1 } }
         ]),
 
-        // Performance trends
+        // Performance trends — honor the request's timeRange
         LogModel.aggregate([
           {
             $match: {
               projectId: id,
-              timestamp: { $gte: last30Days.toISOString() },
+              timestamp: { $gte: startTime.toISOString() },
               $or: [
-                { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-                { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
               ]
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             }
           },
           {
@@ -1258,7 +1256,7 @@ export class ProjectService {
                 hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
               },
               logVolume: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
+              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
               errorRate: {
                 $avg: {
                   $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0]
@@ -1285,7 +1283,7 @@ export class ProjectService {
                   },
                   totalActivity: { $sum: 1 },
                   uniqueServices: { $addToSet: "$service" },
-                  avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } }
+                  avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
                 }
               },
               {
@@ -3243,7 +3241,7 @@ export class ProjectService {
                   $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
                 },
                 avgResponseTime: {
-                  $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] },
+                  $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] },
                 },
               },
             },
@@ -3286,14 +3284,14 @@ export class ProjectService {
                 projectId,
                 timestamp: { $gte: startTime.toISOString() },
                 $or: [
-                  { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-                  { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+                  { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+                  { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
                 ],
               },
             },
             {
               $addFields: {
-                _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+                _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
               },
             },
             {
@@ -3631,8 +3629,8 @@ export class ProjectService {
           $lte: endDate.toISOString(),
         },
         $or: [
-          { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-          { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+          { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+          { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
         ],
       };
 
@@ -3663,7 +3661,7 @@ export class ProjectService {
           { $match: matchStage },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             },
           },
           {
@@ -3720,7 +3718,7 @@ export class ProjectService {
           { $match: matchStage },
           {
             $addFields: {
-              _latency: { $ifNull: ["$ingestionLatency", "$responseTime"] }
+              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
             },
           },
           {
@@ -4017,8 +4015,8 @@ export class ProjectService {
             responseTimes: {
               $push: {
                 $cond: [
-                  { $type: "$responseTime" },
-                  "$responseTime",
+                  { $isNumber: "$data.network.duration" },
+                  "$data.network.duration",
                   null,
                 ],
               },
@@ -4033,8 +4031,8 @@ export class ProjectService {
                 },
                 responseTime: {
                   $cond: [
-                    { $type: "$responseTime" },
-                    "$responseTime",
+                    { $isNumber: "$data.network.duration" },
+                    "$data.network.duration",
                     null,
                   ],
                 },
@@ -4565,15 +4563,15 @@ export class ProjectService {
             projectId,
             timestamp: { $gte: startTime.toISOString() },
             $or: [
-              { ingestionLatency: { $exists: true, $type: "number", $gte: 0 } },
-              { responseTime: { $exists: true, $type: "number", $gte: 0 } }
+              { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
+              { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
             ],
           },
         },
         {
           $group: {
             _id: null,
-            avgResponseTime: { $avg: { $ifNull: ["$ingestionLatency", "$responseTime"] } },
+            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
           },
         },
       ]);

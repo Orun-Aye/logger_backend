@@ -136,7 +136,6 @@ export function checkUsageLimit(resource: string) {
         projects: limits.maxProjects,
         teamMembers: limits.maxTeamMembers,
         alertRules: limits.maxAlertRules,
-        customDashboards: limits.maxCustomDashboards,
         apiTokens: limits.maxApiTokens,
       };
 
@@ -179,7 +178,7 @@ export function checkUsageLimit(resource: string) {
           break;
         }
         default:
-          // For alertRules, customDashboards, apiTokens we skip here
+          // For alertRules, apiTokens we skip here
           // as they are less critical. Let the service layer handle it.
           return next();
       }

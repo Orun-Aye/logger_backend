@@ -6,7 +6,6 @@ import { AlertRuleModel } from "../models/alertRule.model";
 import { AlertEventModel } from "../models/alertEvent.model";
 import { UserPreferenceModel } from "../models/userPreference.model";
 import { ApiTokenModel } from "../models/apiToken.model";
-import { CustomDashboardModel } from "../models/customDashboard.model";
 import { SavedSearchModel } from "../models/savedSearch.model";
 import logger from "../utils/logger";
 
@@ -84,21 +83,13 @@ export class GdprService {
       name: "preferences.json",
     });
 
-    // 7. Custom dashboards
-    const customDashboards = await CustomDashboardModel.find({
-      userId,
-    }).lean();
-    archive.append(JSON.stringify(customDashboards, null, 2), {
-      name: "custom-dashboards.json",
-    });
-
-    // 8. Saved searches
+    // 7. Saved searches
     const savedSearches = await SavedSearchModel.find({ userId }).lean();
     archive.append(JSON.stringify(savedSearches, null, 2), {
       name: "saved-searches.json",
     });
 
-    // 9. API tokens (exclude hash for security)
+    // 8. API tokens (exclude hash for security)
     const apiTokens = await ApiTokenModel.find({ userId })
       .select("-tokenHash")
       .lean();
@@ -106,7 +97,7 @@ export class GdprService {
       name: "api-tokens.json",
     });
 
-    // 10. Export metadata
+    // 9. Export metadata
     archive.append(
       JSON.stringify(
         {
@@ -120,7 +111,6 @@ export class GdprService {
             "alert-rules",
             "alerts",
             "preferences",
-            "custom-dashboards",
             "saved-searches",
             "api-tokens",
           ],
@@ -204,7 +194,6 @@ export class GdprService {
     // Delete user-scoped data
     await UserPreferenceModel.deleteMany({ userId });
     await ApiTokenModel.deleteMany({ userId });
-    await CustomDashboardModel.deleteMany({ userId });
     await SavedSearchModel.deleteMany({ userId }); // Any remaining saved searches
 
     // Finally delete the user

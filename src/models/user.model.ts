@@ -27,6 +27,24 @@ export interface IUser extends Document {
     betaAccess: boolean;
     betaTier: "core" | "full";
     inviteCode?: string;
+
+    /**
+     * GitHub integration connection. Persisted only when the user explicitly
+     * connects their GitHub account from settings (separate from login OAuth).
+     * The access token is used server-side for read operations against the
+     * user's repos and never returned to the frontend.
+     *
+     * TODO: Encrypt `accessToken` at rest once a project-wide secret-encryption
+     * helper exists. Until then, treat as sensitive — never include in API
+     * responses or logs.
+     */
+    githubConnection?: {
+        githubUserId: number;
+        githubLogin: string;
+        accessToken: string;
+        scopes: string[];
+        connectedAt: Date;
+    };
 }
 
 const UserSchema: Schema<IUser> = new Schema({
@@ -58,6 +76,19 @@ const UserSchema: Schema<IUser> = new Schema({
     betaAccess: { type: Boolean, default: false },
     betaTier: { type: String, enum: ["core", "full"], default: "core" },
     inviteCode: { type: String },
+
+    githubConnection: {
+        type: {
+            githubUserId: { type: Number, required: true },
+            githubLogin: { type: String, required: true },
+            accessToken: { type: String, required: true },
+            scopes: { type: [String], default: [] },
+            connectedAt: { type: Date, default: Date.now },
+        },
+        required: false,
+        default: undefined,
+        select: true,
+    },
 }, {
     timestamps: true,
 })

@@ -6,7 +6,6 @@ export interface PlanLimits {
   maxTeamMembers: number; // -1 = unlimited
   retentionDays: number;
   maxAlertRules: number; // -1 = unlimited
-  maxCustomDashboards: number; // -1 = unlimited
   maxApiTokens: number; // -1 = unlimited
   aiInsights: "none" | "basic" | "full";
   aiInsightsPerDay: number; // 0 = none, -1 = unlimited
@@ -44,7 +43,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       maxTeamMembers: 1,
       retentionDays: 7,
       maxAlertRules: 3,
-      maxCustomDashboards: 1,
       maxApiTokens: 1,
       aiInsights: "none",
       aiInsightsPerDay: 0,
@@ -57,7 +55,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       "2 projects",
       "7-day retention",
       "3 alert rules",
-      "1 custom dashboard",
       "Community support",
     ],
     support: "Community",
@@ -74,7 +71,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       maxTeamMembers: 3,
       retentionDays: 14,
       maxAlertRules: 15,
-      maxCustomDashboards: 3,
       maxApiTokens: 3,
       aiInsights: "basic",
       aiInsightsPerDay: 5,
@@ -88,7 +84,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       "3 team members",
       "14-day retention",
       "15 alert rules",
-      "3 custom dashboards",
       "Basic AI Insights (5/day)",
       "Email support (48h)",
     ],
@@ -106,7 +101,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       maxTeamMembers: 10,
       retentionDays: 30,
       maxAlertRules: -1,
-      maxCustomDashboards: 10,
       maxApiTokens: 10,
       aiInsights: "full",
       aiInsightsPerDay: -1,
@@ -120,7 +114,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       "10 team members",
       "30-day retention",
       "Unlimited alert rules",
-      "10 custom dashboards",
       "Full AI Insights",
       "Anomaly detection",
       "Optional MFA",
@@ -140,7 +133,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       maxTeamMembers: 25,
       retentionDays: 90,
       maxAlertRules: -1,
-      maxCustomDashboards: -1,
       maxApiTokens: -1,
       aiInsights: "full",
       aiInsightsPerDay: -1,
@@ -154,7 +146,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       "25 team members",
       "90-day retention",
       "Unlimited alert rules",
-      "Unlimited custom dashboards",
       "Full AI Insights",
       "Anomaly detection",
       "30-day audit log",
@@ -175,7 +166,6 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       maxTeamMembers: -1,
       retentionDays: 365,
       maxAlertRules: -1,
-      maxCustomDashboards: -1,
       maxApiTokens: -1,
       aiInsights: "full",
       aiInsightsPerDay: -1,

@@ -17,6 +17,13 @@ export interface IProject extends Document {
     slack?: { webhookUrl?: string };
     email?: { recipients?: string[] };
     webhook?: { url?: string; headers?: Record<string, string> };
+    githubRepo?: {
+      owner: string;
+      repo: string;
+      branch: string;
+      linkedAt: Date;
+      linkedBy: Types.ObjectId;
+    };
   };
   rateLimitConfig?: {
     maxRequestsPerMinute: number;
@@ -63,6 +70,17 @@ const ProjectSchema: Schema<IProject> = new Schema(
       webhook: {
         url: { type: String, default: "" },
         headers: { type: Schema.Types.Mixed, default: {} },
+      },
+      githubRepo: {
+        type: {
+          owner: { type: String, required: true },
+          repo: { type: String, required: true },
+          branch: { type: String, required: true, default: "main" },
+          linkedAt: { type: Date, default: Date.now },
+          linkedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        },
+        required: false,
+        default: undefined,
       },
     },
     rateLimitConfig: {
