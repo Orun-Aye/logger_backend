@@ -1,10 +1,7 @@
 import { Router } from "express";
 import { ChangeController } from "../controllers/change.controller";
 import { ErrorGroupController } from "../controllers/errorGroup.controller";
-import {
-  authenticateApiKey,
-  verifyToken,
-} from "../middleware/auth.middleware";
+import { authenticateApiKey, verifyToken } from "../middleware/auth.middleware";
 
 /**
  * Change Intelligence routes (Phase 7): change feed, deployments,
@@ -16,22 +13,22 @@ const router = Router();
 router.get(
   "/projects/:projectId/changes",
   verifyToken,
-  ChangeController.getChanges
+  ChangeController.getChanges,
 );
 router.post(
   "/projects/:projectId/changes/retry-summaries",
   verifyToken,
-  ChangeController.retrySummaries
+  ChangeController.retrySummaries,
 );
 router.post(
   "/projects/:projectId/changes/backfill",
   verifyToken,
-  ChangeController.backfill
+  ChangeController.backfill,
 );
 router.post(
   "/projects/:projectId/changes/:sha/explain",
   verifyToken,
-  ChangeController.explainChange
+  ChangeController.explainChange,
 );
 
 // --- Deployments & releases ---
@@ -39,49 +36,49 @@ router.post(
 router.post(
   "/projects/:projectId/deployments",
   authenticateApiKey,
-  ChangeController.recordDeployment
+  ChangeController.recordDeployment,
 );
 router.get(
   "/projects/:projectId/deployments",
   verifyToken,
-  ChangeController.getDeployments
+  ChangeController.getDeployments,
 );
 router.get(
   "/projects/:projectId/deploy-markers",
   verifyToken,
-  ChangeController.getDeployMarkers
+  ChangeController.getDeployMarkers,
 );
 router.get(
   "/projects/:projectId/releases/:release/health",
   verifyToken,
-  ChangeController.getReleaseHealth
+  ChangeController.getReleaseHealth,
 );
 
 // --- Error groups ---
 router.get(
   "/projects/:projectId/error-groups",
   verifyToken,
-  ErrorGroupController.list
+  ErrorGroupController.list,
 );
 router.get(
   "/projects/:projectId/error-groups/:groupId",
   verifyToken,
-  ErrorGroupController.detail
+  ErrorGroupController.detail,
 );
 router.patch(
   "/projects/:projectId/error-groups/:groupId",
   verifyToken,
-  ErrorGroupController.updateStatus
+  ErrorGroupController.updateStatus,
 );
 router.get(
   "/projects/:projectId/error-groups/:groupId/issue-draft",
   verifyToken,
-  ErrorGroupController.issueDraft
+  ErrorGroupController.issueDraft,
 );
 router.post(
   "/projects/:projectId/error-groups/:groupId/create-issue",
   verifyToken,
-  ErrorGroupController.createIssue
+  ErrorGroupController.createIssue,
 );
 
 export default router;

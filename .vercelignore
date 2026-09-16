@@ -1,9 +1,0 @@
-node_modules
-*.test.ts
-*.test.js
-__tests__
-jest.config.js
-tsconfig.tsbuildinfo
-README.md
-LICENSE
-dist

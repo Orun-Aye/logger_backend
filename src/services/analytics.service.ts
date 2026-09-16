@@ -2,6 +2,30 @@
 import { LogModel } from "../models/log.model";
 import { LogLevel } from "../dtos/log.dto";
 
+/**
+ * Session ID resolution.
+ *
+ * The SDK sends `sessionId` as a top-level field, which is what the model
+ * indexes and what ErrorGroup counts users by. Logs ingested before the SDK
+ * started sending it carried the value at `context.sessionId` instead. Every
+ * session query prefers the top-level field and falls back to the nested one
+ * so historical data keeps resolving.
+ */
+const SESSION_ID_EXPR = { $ifNull: ["$sessionId", "$context.sessionId"] };
+
+/** Matches logs carrying a session ID in either location. */
+const HAS_SESSION_ID = {
+  $or: [
+    { sessionId: { $exists: true, $ne: null } },
+    { "context.sessionId": { $exists: true, $ne: null } },
+  ],
+};
+
+/** Matches one specific session ID in either location. */
+const sessionIdMatch = (sessionId: string) => ({
+  $or: [{ sessionId }, { "context.sessionId": sessionId }],
+});
+
 export class AnalyticsService {
   // ============================================================================
   // ERROR ANALYTICS
@@ -1035,12 +1059,12 @@ export class AnalyticsService {
             $gte: startDate.toISOString(),
             $lte: endDate.toISOString(),
           },
-          "context.sessionId": { $exists: true },
+          ...HAS_SESSION_ID,
         },
       },
       {
         $group: {
-          _id: "$context.sessionId",
+          _id: SESSION_ID_EXPR,
           userId: { $first: "$context.userId" },
           startTime: { $min: "$timestamp" },
           endTime: { $max: "$timestamp" },
@@ -1075,10 +1099,21 @@ export class AnalyticsService {
       { $limit: options.limit },
     ]);
 
-    const total = await LogModel.distinct("context.sessionId", {
-      projectId,
-      timestamp: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
-    }).then((ids) => ids.length);
+    const totalAgg = await LogModel.aggregate([
+      {
+        $match: {
+          projectId,
+          timestamp: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+          ...HAS_SESSION_ID,
+        },
+      },
+      { $group: { _id: SESSION_ID_EXPR } },
+      { $count: "total" },
+    ]);
+    const total = totalAgg[0]?.total ?? 0;
 
     return {
       sessions,
@@ -1094,7 +1129,7 @@ export class AnalyticsService {
   static async getSessionDetails(projectId: string, sessionId: string) {
     const logs = await LogModel.find({
       projectId,
-      "context.sessionId": sessionId,
+      ...sessionIdMatch(sessionId),
     })
       .sort({ timestamp: 1 })
       .lean();
@@ -1127,7 +1162,7 @@ export class AnalyticsService {
   static async getSessionTimeline(projectId: string, sessionId: string) {
     const timeline = await LogModel.find({
       projectId,
-      "context.sessionId": sessionId,
+      ...sessionIdMatch(sessionId),
     })
       .sort({ timestamp: 1 })
       .select("timestamp eventType level message url data error")
@@ -1158,12 +1193,12 @@ export class AnalyticsService {
             $gte: startDate.toISOString(),
             $lte: endDate.toISOString(),
           },
-          "context.sessionId": { $exists: true },
+          ...HAS_SESSION_ID,
         },
       },
       {
         $group: {
-          _id: "$context.sessionId",
+          _id: SESSION_ID_EXPR,
           startTime: { $min: { $toDate: "$timestamp" } },
           endTime: { $max: { $toDate: "$timestamp" } },
           pageViews: {
@@ -1207,12 +1242,12 @@ export class AnalyticsService {
             $lte: endDate.toISOString(),
           },
           eventType: "pageview",
-          "context.sessionId": { $exists: true },
+          ...HAS_SESSION_ID,
         },
       },
       {
         $group: {
-          _id: "$context.sessionId",
+          _id: SESSION_ID_EXPR,
           pages: { $push: { url: "$url", timestamp: "$timestamp" } },
         },
       },
@@ -2232,7 +2267,7 @@ export class AnalyticsService {
           _id: { $ifNull: ["$data.url", "$url"] },
           title: { $first: "$data.title" },
           views: { $sum: 1 },
-          uniqueSessions: { $addToSet: "$context.sessionId" },
+          uniqueSessions: { $addToSet: SESSION_ID_EXPR },
         },
       },
       {
@@ -2316,17 +2351,12 @@ export class AnalyticsService {
             $gte: startDate.toISOString(),
             $lte: endDate.toISOString(),
           },
-          $or: [
-            { "context.sessionId": { $exists: true, $ne: null } },
-            { sessionId: { $exists: true, $ne: null } },
-          ],
+          ...HAS_SESSION_ID,
         },
       },
       {
         $addFields: {
-          _resolvedSessionId: {
-            $ifNull: ["$context.sessionId", "$sessionId"],
-          },
+          _resolvedSessionId: SESSION_ID_EXPR,
         },
       },
       { $sort: { _resolvedSessionId: 1, timestamp: 1 } },

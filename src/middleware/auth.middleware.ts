@@ -75,6 +75,48 @@ export async function verifyToken(
   next();
 }
 
+/**
+ * Best-effort authentication for endpoints reached by top-level browser
+ * navigation, where no `Authorization` header can be set. Reads the JWT from
+ * the header when present, otherwise from a `?token=` query parameter (the
+ * same convention the WebSocket handshake uses).
+ *
+ * Never rejects: `req.userId` is left undefined when no valid token is
+ * supplied, so handlers must treat the user as optional.
+ *
+ * Note the tradeoff of `?token=`: the JWT lands in browser history and in any
+ * access log along the way. Only use this where the endpoint immediately
+ * redirects and the user binding is a convenience, not an authorization
+ * decision.
+ */
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) {
+  const authHeader = req.headers.authorization;
+  const queryToken =
+    typeof req.query.token === "string" ? req.query.token : undefined;
+  const raw = authHeader
+    ? authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : authHeader
+    : queryToken;
+
+  if (!raw) return next();
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return next();
+
+  try {
+    const decoded = jwt.verify(raw, secret) as JwtPayload;
+    if (decoded?.userId) req.userId = decoded.userId;
+  } catch {
+    // Anonymous is a valid outcome here.
+  }
+  next();
+}
+
 export async function authenticateApiKey(
   req: Request,
   res: Response,

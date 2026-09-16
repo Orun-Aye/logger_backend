@@ -9,7 +9,9 @@
  * All Phase 7 features prefer installation tokens and fall back to the
  * linking user's OAuth token when no installation covers the repo.
  */
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
 import { config } from "../../config";
 import logger from "../../utils/logger";
 import {
@@ -29,6 +31,30 @@ interface CachedToken {
 const tokenCache = new Map<number, CachedToken>();
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
+/**
+ * Pending App installations, keyed by the opaque `state` we hand to GitHub.
+ * GitHub echoes it back to the setup callback, which is how an installation
+ * gets attributed to the Apperio user who started it. Mirrors the in-memory
+ * state store in [github-oauth.service.ts]; move to Redis if we scale past a
+ * single node.
+ */
+interface InstallStateRecord {
+  /** Absent when an anonymous visitor started the install. */
+  userId?: string;
+  returnTo?: string;
+  expiresAt: number;
+}
+
+const installStateStore = new Map<string, InstallStateRecord>();
+const INSTALL_STATE_TTL_MS = 10 * 60 * 1000;
+
+function pruneInstallStates() {
+  const now = Date.now();
+  for (const [key, record] of installStateStore.entries()) {
+    if (record.expiresAt < now) installStateStore.delete(key);
+  }
+}
+
 export const GithubAppService = {
   isEnabled(): boolean {
     return Boolean(
@@ -38,9 +64,39 @@ export const GithubAppService = {
     );
   },
 
-  /** Public URL a user visits to install the App. */
-  getInstallUrl(): string {
-    return `https://github.com/apps/${config.githubApp.slug}/installations/new`;
+  /**
+   * Public URL a user visits to install the App. When `state` is passed,
+   * GitHub echoes it back to the App's Setup URL so the callback can tell
+   * which Apperio user performed the install.
+   */
+  getInstallUrl(state?: string): string {
+    const base = `https://github.com/apps/${config.githubApp.slug}/installations/new`;
+    return state ? `${base}?state=${encodeURIComponent(state)}` : base;
+  },
+
+  /** Issue a one-time `state` token binding an install to a user. */
+  createInstallState(opts: { userId?: string; returnTo?: string }): string {
+    pruneInstallStates();
+    const state = crypto.randomBytes(24).toString("hex");
+    installStateStore.set(state, {
+      userId: opts.userId,
+      returnTo: opts.returnTo,
+      expiresAt: Date.now() + INSTALL_STATE_TTL_MS,
+    });
+    return state;
+  },
+
+  /**
+   * Redeem a `state` token. Single use: a replayed state returns null.
+   * An unknown state is not fatal for the caller, it just means the install
+   * cannot be attributed to a user.
+   */
+  consumeInstallState(state: string): InstallStateRecord | null {
+    pruneInstallStates();
+    const record = installStateStore.get(state);
+    if (!record) return null;
+    installStateStore.delete(state);
+    return record;
   },
 
   /** Short-lived app-level JWT used to mint installation tokens. */
@@ -95,6 +151,29 @@ export const GithubAppService = {
         { repositorySelection: "all", accountLogin: owner },
       ],
     }).lean<IGithubInstallation>();
+  },
+
+  /**
+   * Installations visible to one Apperio user: the ones they installed
+   * themselves, plus any sitting on the GitHub account they connected via
+   * OAuth (an install started from github.com directly never carries our
+   * `state`, so `installedByUserId` alone would miss it).
+   */
+  async listInstallationsForUser(
+    userId: string,
+    githubLogin?: string
+  ): Promise<IGithubInstallation[]> {
+    const or: Record<string, unknown>[] = [];
+    if (Types.ObjectId.isValid(userId)) {
+      or.push({ installedByUserId: new Types.ObjectId(userId) });
+    }
+    if (githubLogin) {
+      or.push({ accountLogin: githubLogin });
+    }
+    if (or.length === 0) return [];
+    return GithubInstallationModel.find({ $or: or })
+      .sort({ createdAt: -1 })
+      .lean<IGithubInstallation[]>();
   },
 
   /**
@@ -231,5 +310,65 @@ export const GithubAppService = {
 
     existing.set({ ...update, repositories: repoList });
     await existing.save();
+  },
+
+  /**
+   * Pull installation state straight from the GitHub API and persist it.
+   *
+   * The `installation` webhook covers this too, but the setup callback cannot
+   * rely on it: the webhook may not have landed yet (or at all, in local dev
+   * where GitHub cannot reach localhost). Fetching on the callback makes the
+   * install take effect immediately, and the later webhook is idempotent.
+   *
+   * Requires a configured App id + private key. Throws otherwise, and callers
+   * are expected to treat that as non-fatal.
+   */
+  async syncInstallationById(
+    installationId: number,
+    userId?: string
+  ): Promise<void> {
+    const appJwt = this.createAppJwt();
+    const installation = await githubApiCall<any>(
+      appJwt,
+      `/app/installations/${installationId}`
+    );
+
+    // "all repositories" installations carry no explicit repo list; the
+    // accountLogin match in findInstallationForRepo covers them instead.
+    let repositories: Array<{ id: number; full_name: string }> | undefined;
+    if (installation?.repository_selection !== "all") {
+      try {
+        const token = await this.getInstallationToken(installationId);
+        const result = await githubApiCall<{
+          repositories: Array<{ id: number; full_name: string }>;
+        }>(token, "/installation/repositories?per_page=100");
+        repositories = result.repositories || [];
+      } catch (error) {
+        logger.warn("GithubApp: could not list installation repositories", {
+          installationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Reuse the webhook path so both routes write an identical record.
+    await this.handleInstallationEvent({
+      action: "created",
+      installation,
+      repositories,
+    });
+
+    if (userId && Types.ObjectId.isValid(userId)) {
+      await GithubInstallationModel.updateOne(
+        { installationId },
+        { $set: { installedByUserId: new Types.ObjectId(userId) } }
+      );
+    }
+
+    logger.info("GithubApp: installation synced from setup callback", {
+      installationId,
+      account: installation?.account?.login,
+      repositorySelection: installation?.repository_selection,
+    });
   },
 };

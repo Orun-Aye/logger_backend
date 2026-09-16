@@ -5,6 +5,7 @@ import { GithubAppService } from "../services/integrations/github-app.service";
 import { GitHubApiError } from "../services/integrations/github-client";
 import { ProjectModel } from "../models/project.model";
 import { ChangeService } from "../services/change.service";
+import logger from "../utils/logger";
 
 function ok<T>(res: Response, data: T) {
   return res.json({ status: "success", data });
@@ -29,6 +30,30 @@ function frontendBaseUrl(): string {
     process.env.CORS_ORIGIN ||
     "https://www.apperio.dev"
   );
+}
+
+/**
+ * Where a user goes on github.com to add or remove repositories from an
+ * existing installation. Org installs live under the org's settings, personal
+ * ones under the user's own.
+ */
+function buildInstallationManageUrl(
+  accountType: "User" | "Organization",
+  accountLogin: string,
+): string {
+  return accountType === "Organization"
+    ? `https://github.com/organizations/${accountLogin}/settings/installations`
+    : "https://github.com/settings/installations";
+}
+
+/**
+ * Append query params to a URL that may already carry a query string.
+ * Used to hand the frontend a result code after an external redirect.
+ */
+function withParams(url: string, params: Record<string, string>): string {
+  const separator = url.includes("?") ? "&" : "?";
+  const query = new URLSearchParams(params).toString();
+  return `${url}${separator}${query}`;
 }
 
 export const GithubIntegrationController = {
@@ -103,7 +128,8 @@ export const GithubIntegrationController = {
 
   /**
    * GitHub App installation status. Tells the frontend whether the App is
-   * configured platform-side and whether an installation covers a repo.
+   * configured platform-side, which installations this user can see, and
+   * whether one of them covers a specific repo.
    */
   async getAppStatus(req: Request, res: Response) {
     const userId = req.userId;
@@ -116,21 +142,133 @@ export const GithubIntegrationController = {
         typeof req.query.repo === "string" ? req.query.repo : undefined;
 
       let coversRepo: boolean | undefined;
+      let coveringInstallationId: number | undefined;
       if (enabled && owner && repo) {
         const installation = await GithubAppService.findInstallationForRepo(
           owner,
           repo
         );
         coversRepo = Boolean(installation);
+        coveringInstallationId = installation?.installationId;
       }
+
+      // The OAuth login lets us surface installs the user made straight from
+      // github.com, which carry no `state` and so no installedByUserId.
+      let githubLogin: string | undefined;
+      try {
+        githubLogin = (await GithubOAuthService.getStatus(userId)).githubLogin;
+      } catch {
+        // A missing OAuth connection just narrows the installation list.
+      }
+
+      const installations = enabled
+        ? await GithubAppService.listInstallationsForUser(userId, githubLogin)
+        : [];
 
       return ok(res, {
         enabled,
         installUrl: enabled ? GithubAppService.getInstallUrl() : null,
         coversRepo,
+        coveringInstallationId,
+        installations: installations.map((i) => ({
+          installationId: i.installationId,
+          accountLogin: i.accountLogin,
+          accountType: i.accountType,
+          repositorySelection: i.repositorySelection,
+          repositories: (i.repositories || []).map((r) => r.fullName),
+          suspended: i.suspended,
+          installedAt: i.createdAt,
+          manageUrl: buildInstallationManageUrl(i.accountType, i.accountLogin),
+        })),
       });
     } catch (err) {
       return fail(res, 500, (err as Error).message);
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // GitHub App installation (Phase 7 Change Intelligence)
+  // ------------------------------------------------------------------
+
+  /**
+   * Kick off a GitHub App installation. This is hit by a top-level browser
+   * navigation, so authentication is optional (see `optionalAuth`): an
+   * anonymous visitor still reaches GitHub, the install just is not attributed
+   * to an Apperio user until the webhook lands.
+   */
+  async startAppInstall(req: Request, res: Response) {
+    try {
+      const returnTo =
+        typeof req.query.returnTo === "string" ? req.query.returnTo : undefined;
+
+      if (!GithubAppService.isEnabled()) {
+        // The install screen itself only needs the App slug, so continue.
+        // Token minting will fail later until the env group is complete.
+        logger.warn(
+          "GithubApp: install started while App credentials are incomplete"
+        );
+      }
+
+      const state = GithubAppService.createInstallState({
+        userId: req.userId,
+        returnTo,
+      });
+      return res.redirect(GithubAppService.getInstallUrl(state));
+    } catch (err) {
+      return fail(res, 500, (err as Error).message);
+    }
+  },
+
+  /**
+   * GitHub App Setup URL target. GitHub sends the browser here after an
+   * install with `installation_id`, `setup_action` and our `state`.
+   *
+   * Identity comes from `state`, never a JWT, so this MUST NOT sit behind
+   * verifyToken. Storage is idempotent and shared with the `installation`
+   * webhook, which may arrive before or after this request.
+   */
+  async appSetupCallback(req: Request, res: Response) {
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const setupAction =
+      typeof req.query.setup_action === "string" ? req.query.setup_action : "";
+    const record = state ? GithubAppService.consumeInstallState(state) : null;
+    const target =
+      record?.returnTo || `${frontendBaseUrl()}/settings/integrations`;
+
+    const installationId = Number.parseInt(
+      String(req.query.installation_id ?? ""),
+      10
+    );
+
+    if (!Number.isInteger(installationId) || installationId <= 0) {
+      // setup_action=request means an org member asked an owner to approve;
+      // there is no installation to record yet.
+      return res.redirect(
+        withParams(target, {
+          github_app: setupAction === "request" ? "requested" : "error",
+        })
+      );
+    }
+
+    try {
+      await GithubAppService.syncInstallationById(
+        installationId,
+        record?.userId
+      );
+      return res.redirect(
+        withParams(target, {
+          github_app: "installed",
+          installation_id: String(installationId),
+        })
+      );
+    } catch (err) {
+      // The install succeeded on GitHub even if we could not read it back
+      // (missing App id/key, API hiccup). The webhook is the backstop.
+      logger.warn("GithubApp: setup callback could not sync installation", {
+        installationId,
+        error: (err as Error).message,
+      });
+      return res.redirect(withParams(target, { github_app: "pending" }));
     }
   },
 

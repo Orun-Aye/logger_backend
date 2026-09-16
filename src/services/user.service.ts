@@ -150,8 +150,11 @@ export class UserService {
       const user = await UserModel.findOne({
         email: data.email,
       });
+      // Deliberately the same error as a bad password: a distinct "user not
+      // found" here would both 500 (UserNotFoundError is not mapped to a 4xx)
+      // and hand out an account-enumeration oracle on an unauthenticated route.
       if (!user) {
-        throw new UserNotFoundError();
+        throw new UserValidationError("Invalid email or password");
       }
       const isPasswordValid = await bcrypt.compare(
         data.password,

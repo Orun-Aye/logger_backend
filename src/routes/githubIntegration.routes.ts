@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyToken } from "../middleware/auth.middleware";
+import { verifyToken, optionalAuth } from "../middleware/auth.middleware";
 import { GithubIntegrationController } from "../controllers/githubIntegration.controller";
 
 const router = Router();
@@ -22,6 +22,22 @@ router.get(
   "/integrations/github/status",
   verifyToken,
   GithubIntegrationController.getStatus,
+);
+
+// GitHub App install — opened as a top-level browser navigation, so it
+// cannot carry an Authorization header. optionalAuth accepts `?token=` and
+// falls back to an anonymous install rather than rejecting.
+router.get(
+  "/integrations/github/install",
+  optionalAuth,
+  GithubIntegrationController.startAppInstall,
+);
+
+// GitHub App Setup URL target. Auth comes from the install `state`, NOT a
+// JWT. Mounting WITHOUT verifyToken on purpose.
+router.get(
+  "/integrations/github/setup",
+  GithubIntegrationController.appSetupCallback,
 );
 
 // GitHub App installation status (Phase 7 Change Intelligence)
