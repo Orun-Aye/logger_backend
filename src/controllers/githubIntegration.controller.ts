@@ -61,12 +61,24 @@ export const GithubIntegrationController = {
   // GitHub OAuth lifecycle
   // ------------------------------------------------------------------
 
+  /**
+   * Starts the OAuth dance. Reached by top-level browser navigation, so the
+   * JWT arrives as `?token=` via optionalAuth rather than in a header. A
+   * missing or expired token redirects to login instead of rendering a raw
+   * JSON 401 in the address bar.
+   */
   async startOAuth(req: Request, res: Response) {
     try {
-      const userId = req.userId;
-      if (!userId) return fail(res, 401, "Authentication required");
       const returnTo =
         typeof req.query.returnTo === "string" ? req.query.returnTo : undefined;
+      const userId = req.userId;
+      if (!userId) {
+        const target =
+          returnTo || `${frontendBaseUrl()}/settings/integrations`;
+        return res.redirect(
+          `${frontendBaseUrl()}/login?redirect=${encodeURIComponent(target)}`,
+        );
+      }
       const redirectUri = buildRedirectUri(req);
       const authorizeUrl = GithubOAuthService.getAuthorizeUrl({
         userId,
