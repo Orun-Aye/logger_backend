@@ -4,10 +4,13 @@ import { GithubIntegrationController } from "../controllers/githubIntegration.co
 
 const router = Router();
 
-// User-scoped GitHub OAuth + connection management
+// User-scoped GitHub OAuth + connection management.
+// Opened as a top-level browser navigation, so it cannot carry an
+// Authorization header. optionalAuth accepts `?token=`; startOAuth still
+// requires a resolved user and redirects to login when there is none.
 router.get(
   "/integrations/github/connect",
-  verifyToken,
+  optionalAuth,
   GithubIntegrationController.startOAuth,
 );
 
