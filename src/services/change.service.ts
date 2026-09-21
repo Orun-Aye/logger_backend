@@ -92,13 +92,28 @@ export class ChangeService {
     if (commits.length === 0) return;
 
     const linkedProjects = await this.findProjectsForRepo(owner, repo);
-    if (linkedProjects.length === 0) return;
+    if (linkedProjects.length === 0) {
+      // Silent drops here are indistinguishable from "no commits yet" in the
+      // UI, so say so: the usual cause is the repo link having been cleared.
+      logger.warn("ChangeService: push ignored — no project links this repo", {
+        repo: fullName,
+        branch,
+      });
+      return;
+    }
 
     const pushId: string = payload?.after || commits[commits.length - 1]?.id;
 
     for (const project of linkedProjects) {
       // Only track the linked branch (defaults to the repo's main branch)
-      if (branch && project.branch && branch !== project.branch) continue;
+      if (branch && project.branch && branch !== project.branch) {
+        logger.debug("ChangeService: push skipped — branch not tracked", {
+          projectId: project.projectId,
+          pushed: branch,
+          tracked: project.branch,
+        });
+        continue;
+      }
 
       const shas: string[] = [];
       for (const c of commits) {
@@ -165,6 +180,18 @@ export class ChangeService {
    * Import recent commits + releases when a repo is linked so the feed is
    * never empty. Fire-and-forget from the link endpoint.
    */
+  /**
+   * Whether a project has a GitHub repo linked. Callers use this to fail
+   * loudly instead of firing a backfill that would silently no-op.
+   */
+  static async hasLinkedRepo(projectId: string): Promise<boolean> {
+    const project = await ProjectModel.findById(projectId)
+      .select("integrationSettings")
+      .lean();
+    const link = (project as any)?.integrationSettings?.githubRepo;
+    return Boolean(link?.owner && link?.repo);
+  }
+
   static async backfillProject(projectId: string): Promise<void> {
     const project = await ProjectModel.findById(projectId)
       .select("integrationSettings ownerId")

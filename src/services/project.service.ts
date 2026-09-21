@@ -2510,12 +2510,19 @@ export class ProjectService {
     try {
       this.validateObjectId(projectId);
 
+      // Merge per top-level key instead of replacing the whole subdocument.
+      // Callers send only the integrations they manage (slack/email/webhook),
+      // so a wholesale assignment silently erased `githubRepo` — the repo link
+      // written by POST /projects/:id/github-link — and every GitHub webhook
+      // then dropped on the floor because findProjectsForRepo matched nothing.
+      const update: Record<string, any> = { updatedAt: new Date() };
+      for (const [key, value] of Object.entries(integrationSettings)) {
+        update[`integrationSettings.${key}`] = value;
+      }
+
       const updatedProject = await ProjectModel.findByIdAndUpdate(
         projectId,
-        {
-          integrationSettings,
-          updatedAt: new Date(),
-        },
+        { $set: update },
         { new: true }
       );
 

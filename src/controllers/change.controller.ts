@@ -81,6 +81,11 @@ export const ChangeController = {
   async backfill(req: Request, res: Response) {
     const { projectId } = req.params;
     try {
+      // Without a linked repo the backfill returns immediately, so reporting
+      // "queued" would be a lie the UI shows as success.
+      if (!(await ChangeService.hasLinkedRepo(projectId))) {
+        return fail(res, 409, "No GitHub repository is linked to this project");
+      }
       // Fire-and-forget; the feed fills in as the import progresses
       void ChangeService.backfillProject(projectId);
       return res

@@ -87,7 +87,13 @@ export class GithubWebhookService {
         const [owner, repo] = fullName.split("/");
         if (!owner || !repo) return;
         const projects = await ChangeService.findProjectsForRepo(owner, repo);
-        if (projects.length === 0 && event !== "issues") return;
+        if (projects.length === 0 && event !== "issues") {
+          logger.warn("GithubWebhook: event ignored — no project links this repo", {
+            event,
+            repo: fullName,
+          });
+          return;
+        }
 
         for (const project of projects) {
           if (event === "deployment") {
