@@ -80,7 +80,7 @@ export const GithubIntegrationController = {
         );
       }
       const redirectUri = buildRedirectUri(req);
-      const authorizeUrl = GithubOAuthService.getAuthorizeUrl({
+      const authorizeUrl = await GithubOAuthService.getAuthorizeUrl({
         userId,
         redirectUri,
         returnTo,
@@ -221,7 +221,7 @@ export const GithubIntegrationController = {
         );
       }
 
-      const state = GithubAppService.createInstallState({
+      const state = await GithubAppService.createInstallState({
         userId: req.userId,
         returnTo,
       });
@@ -243,7 +243,9 @@ export const GithubIntegrationController = {
     const state = typeof req.query.state === "string" ? req.query.state : "";
     const setupAction =
       typeof req.query.setup_action === "string" ? req.query.setup_action : "";
-    const record = state ? GithubAppService.consumeInstallState(state) : null;
+    const record = state
+      ? await GithubAppService.consumeInstallState(state)
+      : null;
     const target =
       record?.returnTo || `${frontendBaseUrl()}/settings/integrations`;
 

@@ -18,6 +18,7 @@ import {
   GithubInstallationModel,
   IGithubInstallation,
 } from "../../models/githubInstallation.model";
+import { GithubOAuthStateModel } from "../../models/githubOAuthState.model";
 import { githubApiCall, GitHubApiError } from "./github-client";
 import { GithubOAuthService } from "./github-oauth.service";
 
@@ -34,26 +35,19 @@ const TOKEN_TTL_MS = 55 * 60 * 1000;
 /**
  * Pending App installations, keyed by the opaque `state` we hand to GitHub.
  * GitHub echoes it back to the setup callback, which is how an installation
- * gets attributed to the Apperio user who started it. Mirrors the in-memory
- * state store in [github-oauth.service.ts]; move to Redis if we scale past a
- * single node.
+ * gets attributed to the Apperio user who started it.
+ *
+ * Persisted in Mongo rather than in process memory so a Render restart
+ * between minting and redeeming does not silently lose the attribution, and
+ * so a state minted by one instance can be redeemed by another.
  */
 interface InstallStateRecord {
   /** Absent when an anonymous visitor started the install. */
   userId?: string;
   returnTo?: string;
-  expiresAt: number;
 }
 
-const installStateStore = new Map<string, InstallStateRecord>();
 const INSTALL_STATE_TTL_MS = 10 * 60 * 1000;
-
-function pruneInstallStates() {
-  const now = Date.now();
-  for (const [key, record] of installStateStore.entries()) {
-    if (record.expiresAt < now) installStateStore.delete(key);
-  }
-}
 
 export const GithubAppService = {
   isEnabled(): boolean {
@@ -75,28 +69,44 @@ export const GithubAppService = {
   },
 
   /** Issue a one-time `state` token binding an install to a user. */
-  createInstallState(opts: { userId?: string; returnTo?: string }): string {
-    pruneInstallStates();
+  async createInstallState(opts: {
+    userId?: string;
+    returnTo?: string;
+  }): Promise<string> {
     const state = crypto.randomBytes(24).toString("hex");
-    installStateStore.set(state, {
-      userId: opts.userId,
+    await GithubOAuthStateModel.create({
+      state,
+      kind: "install",
+      userId:
+        opts.userId && Types.ObjectId.isValid(opts.userId)
+          ? new Types.ObjectId(opts.userId)
+          : undefined,
       returnTo: opts.returnTo,
-      expiresAt: Date.now() + INSTALL_STATE_TTL_MS,
+      expiresAt: new Date(Date.now() + INSTALL_STATE_TTL_MS),
     });
     return state;
   },
 
   /**
-   * Redeem a `state` token. Single use: a replayed state returns null.
-   * An unknown state is not fatal for the caller, it just means the install
-   * cannot be attributed to a user.
+   * Redeem a `state` token. Single use: the delete is what enforces that, so
+   * a replayed state returns null. An unknown state is not fatal for the
+   * caller, it just means the install cannot be attributed to a user.
    */
-  consumeInstallState(state: string): InstallStateRecord | null {
-    pruneInstallStates();
-    const record = installStateStore.get(state);
+  async consumeInstallState(state: string): Promise<InstallStateRecord | null> {
+    const record = await GithubOAuthStateModel.findOneAndDelete({
+      state,
+      kind: "install",
+    }).lean<{ userId?: Types.ObjectId; returnTo?: string; expiresAt: Date }>();
     if (!record) return null;
-    installStateStore.delete(state);
-    return record;
+    // The TTL monitor runs about once a minute, so an expired document can
+    // still be here. Reject it explicitly rather than trusting the sweeper.
+    if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
+      return null;
+    }
+    return {
+      userId: record.userId ? String(record.userId) : undefined,
+      returnTo: record.returnTo,
+    };
   },
 
   /** Short-lived app-level JWT used to mint installation tokens. */

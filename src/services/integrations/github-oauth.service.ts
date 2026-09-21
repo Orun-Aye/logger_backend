@@ -8,6 +8,7 @@
 import crypto from "crypto";
 import { Types } from "mongoose";
 import { UserModel } from "../../models/user.model";
+import { GithubOAuthStateModel } from "../../models/githubOAuthState.model";
 import {
   exchangeOAuthCode,
   fetchAuthenticatedUser,
@@ -19,22 +20,12 @@ import {
 const REQUIRED_SCOPES = ["repo", "read:user"];
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-interface OAuthStateRecord {
-  userId: string;
-  returnTo?: string;
-  expiresAt: number;
-}
-
-/** In-memory state store (CSRF token → userId). Sufficient for a single-node
- * deploy; if Apperio scales to multiple instances this should move to Redis. */
-const stateStore = new Map<string, OAuthStateRecord>();
-
-function pruneExpired() {
-  const now = Date.now();
-  for (const [k, v] of stateStore.entries()) {
-    if (v.expiresAt < now) stateStore.delete(k);
-  }
-}
+/**
+ * CSRF `state` tokens live in Mongo, not process memory: the callback that
+ * redeems one may be served by a different instance (or the same instance
+ * after a restart) than the request that minted it. See
+ * [githubOAuthState.model.ts].
+ */
 
 function readEnv() {
   const clientId = process.env.GITHUB_CLIENT_ID;
@@ -54,18 +45,19 @@ export const GithubOAuthService = {
    * Build an authorize URL the browser should redirect to. Stores a CSRF
    * `state` token mapping back to the requesting user.
    */
-  getAuthorizeUrl(opts: {
+  async getAuthorizeUrl(opts: {
     userId: string;
     redirectUri: string;
     returnTo?: string;
-  }): string {
+  }): Promise<string> {
     const { clientId } = readEnv();
-    pruneExpired();
     const state = crypto.randomBytes(24).toString("hex");
-    stateStore.set(state, {
-      userId: opts.userId,
+    await GithubOAuthStateModel.create({
+      state,
+      kind: "oauth",
+      userId: new Types.ObjectId(opts.userId),
       returnTo: opts.returnTo,
-      expiresAt: Date.now() + STATE_TTL_MS,
+      expiresAt: new Date(Date.now() + STATE_TTL_MS),
     });
     const params = new URLSearchParams({
       client_id: clientId,
@@ -85,12 +77,18 @@ export const GithubOAuthService = {
     code: string;
     state: string;
   }): Promise<{ userId: string; returnTo?: string }> {
-    pruneExpired();
-    const record = stateStore.get(opts.state);
+    // Single use: the delete is what enforces that, so a replayed state fails.
+    const record = await GithubOAuthStateModel.findOneAndDelete({
+      state: opts.state,
+      kind: "oauth",
+    }).lean<{ userId: Types.ObjectId; returnTo?: string; expiresAt: Date }>();
     if (!record) {
       throw new Error("OAuth state is invalid or expired");
     }
-    stateStore.delete(opts.state);
+    // The TTL monitor runs about once a minute, so check explicitly.
+    if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
+      throw new Error("OAuth state is invalid or expired");
+    }
 
     const { clientId, clientSecret } = readEnv();
     const { accessToken, scopes } = await exchangeOAuthCode(
@@ -125,7 +123,7 @@ export const GithubOAuthService = {
       { new: false },
     );
 
-    return { userId: record.userId, returnTo: record.returnTo };
+    return { userId: String(record.userId), returnTo: record.returnTo };
   },
 
   async disconnect(userId: string): Promise<void> {
