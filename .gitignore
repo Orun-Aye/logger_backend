@@ -1,3 +1,13 @@
 node_modules
 .env
 logs/
+
+# Build output. Render compiles from source on deploy (`npm run build`), so
+# committing these only created drift between src/ and a stale dist/.
+dist/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Local noise
+server.log
+bash.exe.stackdump
