@@ -7,13 +7,28 @@ const tokenUsage: Map<string, { tokens: number; resetAt: number }> = new Map();
 const MAX_TOKENS_PER_HOUR = 50_000;
 
 /**
+ * Current models think adaptively by default. These calls are short, bounded
+ * summarization and classification jobs, so low effort keeps latency and token
+ * spend down without hurting the output.
+ */
+const AI_EFFORT = "low" as const;
+
+/**
  * AIService — Anthropic Claude-powered intelligence layer.
  *
  * All methods gracefully degrade when the API is unavailable,
  * returning null so callers can fall back to heuristic responses.
  */
+export type AIUnavailableReason =
+  | "disabled"
+  | "missing_api_key"
+  | "rate_limited"
+  | null;
+
 export class AIService {
   private static client: Anthropic | null = null;
+  private static warnedUnconfigured = false;
+  private static lastError: { at: number; message: string } | null = null;
 
   private static getClient(): Anthropic | null {
     if (!this.isAvailable()) return null;
@@ -27,7 +42,53 @@ export class AIService {
 
   /** Check if the AI service is configured and enabled */
   static isAvailable(): boolean {
-    return config.anthropic.enabled && !!config.anthropic.apiKey;
+    const available = config.anthropic.enabled && !!config.anthropic.apiKey;
+    if (!available && !this.warnedUnconfigured) {
+      this.warnedUnconfigured = true;
+      logger.warn(
+        "AI features are disabled — set ANTHROPIC_ENABLED=true and ANTHROPIC_API_KEY to enable commit summaries, explanations and insights",
+        {
+          enabled: config.anthropic.enabled,
+          hasApiKey: !!config.anthropic.apiKey,
+        }
+      );
+    }
+    return available;
+  }
+
+  /**
+   * Why the AI layer cannot serve a request right now, so callers can tell
+   * "never configured" apart from "hit the hourly budget" or "the API errored".
+   * Returns null when a request can be attempted.
+   */
+  static unavailableReason(projectId?: string): AIUnavailableReason {
+    if (!config.anthropic.enabled) return "disabled";
+    if (!config.anthropic.apiKey) return "missing_api_key";
+    if (projectId && !this.checkRateLimit(projectId)) return "rate_limited";
+    return null;
+  }
+
+  /** Last upstream failure, so callers can surface a real reason instead of silence. */
+  static getLastError(): { at: number; message: string } | null {
+    return this.lastError;
+  }
+
+  /**
+   * First text block of a response. Models that think return thinking blocks
+   * ahead of the answer, so content[0] is not reliably the text.
+   */
+  private static firstText(content: Anthropic.Message["content"]): string | null {
+    for (const block of content) {
+      if (block.type === "text") return block.text;
+    }
+    return null;
+  }
+
+  private static recordFailure(error: unknown): void {
+    this.lastError = {
+      at: Date.now(),
+      message: error instanceof Error ? error.message : String(error),
+    };
   }
 
   /** Check per-project rate limit */
@@ -73,7 +134,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 1024,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are an expert software engineer specializing in debugging and root cause analysis. " +
           "Analyze the error messages and provide a concise root cause analysis. " +
@@ -87,7 +149,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(context.projectId, response.usage.input_tokens, response.usage.output_tokens);
       return text;
     } catch (error) {
@@ -109,7 +171,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 2048,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform assistant. " +
           "Generate a concise, actionable health summary from the statistical data provided. " +
@@ -124,7 +187,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       return text;
     } catch (error) {
@@ -147,7 +210,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 512,
+        max_tokens: 4096,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform assistant. " +
           "Answer the user's question about their application based on the provided data context. " +
@@ -161,7 +225,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       return text;
     } catch (error) {
@@ -183,7 +247,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 1024,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform assistant specializing in performance optimization. " +
           "Based on the performance data, suggest concrete optimizations. " +
@@ -197,7 +262,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
 
       if (!text) return null;
@@ -232,7 +297,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 512,
+        max_tokens: 4096,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform assistant. " +
           "Explain in plain language why this anomaly likely occurred and what the team should investigate. " +
@@ -245,7 +311,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       return text;
     } catch (error) {
@@ -279,7 +345,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 2048,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform that explains code changes to app owners. " +
           "For each commit, write two summaries of what actually changed in the app:\n" +
@@ -292,7 +359,7 @@ export class AIService {
         messages: [{ role: "user", content: input }],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       if (!text) return null;
 
@@ -308,6 +375,7 @@ export class AIService {
         return null;
       }
     } catch (error) {
+      this.recordFailure(error);
       logger.error("AI summarizeCommitBatch failed", { error, projectId });
       return null;
     }
@@ -326,7 +394,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 1024,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform that explains code changes to app owners. " +
           "Explain this commit to someone who does not read code: what changed, why it likely changed, " +
@@ -340,10 +409,11 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       return text;
     } catch (error) {
+      this.recordFailure(error);
       logger.error("AI explainCommit failed", { error, projectId });
       return null;
     }
@@ -376,7 +446,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 1536,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform. Draft a high-quality GitHub issue for this " +
           "production error so a developer (or AI coding agent) can fix it without asking questions. " +
@@ -395,7 +466,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       if (!text) return null;
 
@@ -433,7 +504,8 @@ export class AIService {
     try {
       const response = await client.messages.create({
         model: config.anthropic.model,
-        max_tokens: 1024,
+        max_tokens: 8192,
+        output_config: { effort: AI_EFFORT },
         system:
           "You are Apperio, an observability platform. Given an error and a list of recent commits " +
           "(message + touched files), rank which commits most likely introduced the error. " +
@@ -448,7 +520,7 @@ export class AIService {
         ],
       });
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : null;
+      const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);
       if (!text) return null;
 

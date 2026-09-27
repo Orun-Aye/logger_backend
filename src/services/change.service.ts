@@ -10,6 +10,7 @@ import { CommitModel, ICommitFile } from "../models/commit.model";
 import { DeploymentModel } from "../models/deployment.model";
 import { ProjectModel } from "../models/project.model";
 import { AIService } from "../utils/ai/ai.service";
+import { AiBudgetService } from "./aiBudget.service";
 import { GithubAppService } from "./integrations/github-app.service";
 import {
   getCommitDetail,
@@ -310,7 +311,7 @@ export class ChangeService {
     shas: string[],
     tokenUserId?: string
   ): Promise<void> {
-    const batch = shas.slice(0, MAX_COMMITS_PER_SUMMARY_BATCH);
+    const requested = shas.slice(0, MAX_COMMITS_PER_SUMMARY_BATCH);
     const resolved = await GithubAppService.getTokenForRepo(
       owner,
       repo,
@@ -318,11 +319,34 @@ export class ChangeService {
     );
     if (!resolved) {
       await CommitModel.updateMany(
-        { projectId, sha: { $in: batch }, aiSummaryStatus: "pending" },
+        { projectId, sha: { $in: requested }, aiSummaryStatus: "pending" },
         { $set: { aiSummaryStatus: "skipped" } }
       );
       return;
     }
+
+    // Monthly cap: summarize what the budget allows, mark the rest so the
+    // feed shows "summary unavailable" instead of a spinner. Reserved before
+    // fetching diffs so an over-budget push costs no GitHub calls either.
+    const reservation = await AiBudgetService.reserveSummaries(
+      projectId,
+      requested.length
+    );
+    const batch = requested.slice(0, reservation.granted);
+    const overBudget = requested.slice(reservation.granted);
+    if (overBudget.length > 0) {
+      await CommitModel.updateMany(
+        { projectId, sha: { $in: overBudget }, aiSummaryStatus: "pending" },
+        { $set: { aiSummaryStatus: "budget_exceeded" } }
+      );
+      logger.info("ChangeService: monthly AI summary cap reached", {
+        projectId,
+        month: reservation.month,
+        limit: AiBudgetService.monthlySummaryLimit,
+        skipped: overBudget.length,
+      });
+    }
+    if (batch.length === 0) return;
 
     const items: Array<{ sha: string; message: string; diffExcerpt: string }> =
       [];
@@ -362,6 +386,7 @@ export class ChangeService {
         { projectId, sha: { $in: batch }, aiSummaryStatus: "pending" },
         { $set: { aiSummaryStatus: "failed" } }
       );
+      await AiBudgetService.releaseSummaries(projectId, reservation, batch.length);
       return;
     }
 
@@ -371,11 +396,16 @@ export class ChangeService {
         { projectId, sha: { $in: batch }, aiSummaryStatus: "pending" },
         { $set: { aiSummaryStatus: "failed" } }
       );
+      await AiBudgetService.releaseSummaries(projectId, reservation, batch.length);
       return;
     }
 
+    const inBatch = new Set(batch);
+    const completed = new Set<string>();
     for (const s of summaries) {
-      if (!s?.sha) continue;
+      // Ignore shas the model invented or repeated; they were never reserved
+      if (!s?.sha || !inBatch.has(s.sha) || completed.has(s.sha)) continue;
+      completed.add(s.sha);
       await CommitModel.updateOne(
         { projectId, sha: s.sha },
         {
@@ -388,14 +418,14 @@ export class ChangeService {
       );
     }
 
-    // Anything the model failed to cover
-    const covered = new Set(summaries.map((s) => s.sha));
-    const missing = batch.filter((sha) => !covered.has(sha));
+    // Anything the model failed to cover: mark failed and refund the slot
+    const missing = batch.filter((sha) => !completed.has(sha));
     if (missing.length > 0) {
       await CommitModel.updateMany(
         { projectId, sha: { $in: missing }, aiSummaryStatus: "pending" },
         { $set: { aiSummaryStatus: "failed" } }
       );
+      await AiBudgetService.releaseSummaries(projectId, reservation, missing.length);
     }
   }
 
@@ -442,7 +472,16 @@ export class ChangeService {
       from?: Date;
       to?: Date;
     } = {}
-  ): Promise<{ items: any[]; meta: { page: number; limit: number; total: number } }> {
+  ): Promise<{
+    items: any[];
+    meta: {
+      page: number;
+      limit: number;
+      total: number;
+      /** This month's AI summary usage; omitted on deploy-only queries. */
+      aiSummaryUsage?: { month: string; used: number; limit: number };
+    };
+  }> {
     this.validateObjectId(projectId);
     const page = Math.max(1, opts.page || 1);
     const limit = Math.min(50, Math.max(1, opts.limit || 20));
@@ -509,14 +548,15 @@ export class ChangeService {
       { $limit: limit },
     ]);
 
-    const [commitTotal, deployTotal] = await Promise.all([
+    const [commitTotal, deployTotal, aiSummaryUsage] = await Promise.all([
       wantCommits ? CommitModel.countDocuments(commitMatch) : 0,
       wantDeploys ? DeploymentModel.countDocuments(deployMatch) : 0,
+      AiBudgetService.getUsage(projectId),
     ]);
 
     return {
       items,
-      meta: { page, limit, total: commitTotal + deployTotal },
+      meta: { page, limit, total: commitTotal + deployTotal, aiSummaryUsage },
     };
   }
 
@@ -527,7 +567,11 @@ export class ChangeService {
   static async explainChange(
     projectId: string,
     sha: string
-  ): Promise<{ explanation: string; source: "ai" | "cache" | "unavailable" }> {
+  ): Promise<{
+    explanation: string;
+    source: "ai" | "cache" | "unavailable";
+    reason?: string;
+  }> {
     this.validateObjectId(projectId);
     const commit = await CommitModel.findOne({ projectId, sha });
     if (!commit) {
@@ -554,6 +598,11 @@ export class ChangeService {
     );
 
     let diffExcerpt = "";
+    let files: Array<{ filename: string; status: string }> = commit.files || [];
+    let stats: { additions?: number; deletions?: number } = {
+      additions: commit.additions,
+      deletions: commit.deletions,
+    };
     if (resolved) {
       try {
         const detail = await getCommitDetail(
@@ -563,21 +612,45 @@ export class ChangeService {
           sha
         );
         diffExcerpt = this.buildDiffExcerpt(detail.files || []);
-      } catch {
+        if (detail.files?.length) files = detail.files;
+        if (detail.stats) stats = detail.stats;
+      } catch (error) {
         // Explanation still works from the message alone
+        logger.warn("ChangeService: explain diff fetch failed", {
+          projectId,
+          sha,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
-    const explanation = await AIService.explainCommit(
-      { sha, message: commit.message, diffExcerpt },
-      projectId
-    );
+    // Tell the caller up front when AI cannot run, instead of firing a call
+    // that silently returns null and looks like a transient glitch.
+    const unavailable = AIService.unavailableReason(projectId);
+    const explanation = unavailable
+      ? null
+      : await AIService.explainCommit(
+          { sha, message: commit.message, diffExcerpt },
+          projectId
+        );
+
     if (!explanation) {
+      const reason = unavailable ?? "request_failed";
+      logger.warn("ChangeService: explanation unavailable", {
+        projectId,
+        sha,
+        reason,
+        lastError: AIService.getLastError()?.message,
+      });
       return {
-        explanation:
-          "AI explanation is not available right now. The commit message: " +
+        explanation: this.fallbackExplanation(
+          reason,
           commit.message,
+          files,
+          stats
+        ),
         source: "unavailable",
+        reason,
       };
     }
 
@@ -604,6 +677,49 @@ export class ChangeService {
     aiQueue.enqueue(`summarize-retry:${projectId}`, () =>
       this.summarizeCommits(projectId, link.owner, link.repo, shas, tokenUserId)
     );
+  }
+
+  /**
+   * Useful answer when AI cannot run: say why, then describe the change from
+   * the data we already have instead of echoing the commit message back.
+   */
+  private static fallbackExplanation(
+    reason: string,
+    message: string,
+    files: Array<{ filename: string; status: string }>,
+    stats: { additions?: number; deletions?: number }
+  ): string {
+    const why: Record<string, string> = {
+      disabled:
+        "AI explanations are turned off on this server (ANTHROPIC_ENABLED is not set to true).",
+      missing_api_key:
+        "AI explanations are not configured on this server (ANTHROPIC_API_KEY is missing).",
+      rate_limited:
+        "This project has used its hourly AI budget. Explanations resume within the hour.",
+      request_failed:
+        "The AI request failed. Try again in a moment, and check the backend logs if it keeps failing.",
+    };
+
+    const lines = [
+      why[reason] || why.request_failed,
+      "",
+      `Commit: ${message.split("\n")[0]}`,
+    ];
+
+    if (files.length > 0) {
+      const changed = files.length;
+      const churn =
+        stats.additions !== undefined || stats.deletions !== undefined
+          ? ` (+${stats.additions ?? 0}/-${stats.deletions ?? 0})`
+          : "";
+      lines.push(
+        `Touched ${changed} file${changed === 1 ? "" : "s"}${churn}:`,
+        ...files.slice(0, 10).map((f) => `  • ${f.filename} (${f.status})`)
+      );
+      if (changed > 10) lines.push(`  • and ${changed - 10} more`);
+    }
+
+    return lines.join("\n");
   }
 
   private static validateObjectId(id: string): void {

@@ -1,6 +1,12 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-export type AiSummaryStatus = "pending" | "complete" | "skipped" | "failed";
+/** "budget_exceeded": the project hit its monthly AI summary cap (see AiBudgetService). */
+export type AiSummaryStatus =
+  | "pending"
+  | "complete"
+  | "skipped"
+  | "failed"
+  | "budget_exceeded";
 
 export interface ICommitFile {
   filename: string;
@@ -114,7 +120,7 @@ const CommitSchema: Schema = new Schema<ICommit>(
     },
     aiSummaryStatus: {
       type: String,
-      enum: ["pending", "complete", "skipped", "failed"],
+      enum: ["pending", "complete", "skipped", "failed", "budget_exceeded"],
       default: "pending",
     },
     source: {
