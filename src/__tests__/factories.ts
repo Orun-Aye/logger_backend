@@ -5,6 +5,7 @@ import { AlertRuleModel } from "../models/alertRule.model";
 import { AlertEventModel } from "../models/alertEvent.model";
 import { SubscriptionModel } from "../models/subscription.model";
 import { OrganizationModel } from "../models/organization.model";
+import { WaitlistModel } from "../models/waitlist.model";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { Types } from "mongoose";
@@ -146,6 +147,24 @@ export const createTestOrganization = async (
         joinedAt: new Date(),
       },
     ],
+    ...overrides,
+  });
+};
+
+/**
+ * Create an approved waitlist entry with an unused invite code, as required
+ * by signup during early access. Returns the entry; pass `entry.inviteCode`
+ * to UserService.createUser or POST /users/signup.
+ */
+export const createTestInvite = async (overrides: Record<string, any> = {}) => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  return WaitlistModel.create({
+    email: `waitlist-${suffix}@example.com`,
+    position: 1,
+    referralCode: `ref-${suffix}`,
+    status: "approved",
+    inviteCode: `invite-${suffix}`,
+    approvedAt: new Date(),
     ...overrides,
   });
 };

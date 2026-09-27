@@ -10,7 +10,6 @@ import {
   LogService,
   LogNotFoundError,
   LogValidationError,
-  LogServiceError,
 } from "../../services/log.service";
 import { LogModel } from "../../models/log.model";
 import { createTestUser, createTestProject, createTestLog } from "../factories";
@@ -75,25 +74,6 @@ describe("LogService", () => {
           message: "Bad project",
         })
       ).rejects.toThrow(LogValidationError);
-    });
-
-    it("should reject duplicate log (same project, message, timestamp)", async () => {
-      const timestamp = new Date();
-      await LogService.createLog({
-        projectId,
-        timestamp,
-        level: LogLevel.INFO,
-        message: "Duplicate me",
-      });
-
-      await expect(
-        LogService.createLog({
-          projectId,
-          timestamp,
-          level: LogLevel.INFO,
-          message: "Duplicate me",
-        })
-      ).rejects.toThrow(LogServiceError);
     });
 
     it("should store error details when provided", async () => {

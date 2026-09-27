@@ -25,12 +25,18 @@ jest.mock("../../services/notification.service", () => ({
 
 import request from "supertest";
 import app from "../app";
-import { createTestUser, generateAuthToken, getTestPassword } from "../factories";
+import {
+  createTestUser,
+  createTestInvite,
+  generateAuthToken,
+  getTestPassword,
+} from "../factories";
 
 describe("Auth Routes", () => {
   // ----- POST /api/v1/users/signup -----
   describe("POST /api/v1/users/signup", () => {
     it("should create a new user and return 201", async () => {
+      const invite = await createTestInvite();
       const res = await request(app)
         .post("/api/v1/users/signup")
         .send({
@@ -39,6 +45,7 @@ describe("Auth Routes", () => {
           lastName: "Up",
           password: "StrongPass123!",
           role: "developer",
+          inviteCode: invite.inviteCode,
         });
 
       expect(res.status).toBe(201);
@@ -77,6 +84,7 @@ describe("Auth Routes", () => {
 
     it("should return 400 for duplicate email", async () => {
       await createTestUser({ email: "dup@example.com" });
+      const invite = await createTestInvite();
 
       const res = await request(app)
         .post("/api/v1/users/signup")
@@ -86,6 +94,7 @@ describe("Auth Routes", () => {
           lastName: "User",
           password: "StrongPass123!",
           role: "developer",
+          inviteCode: invite.inviteCode,
         });
 
       expect(res.status).toBe(400);

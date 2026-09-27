@@ -87,7 +87,9 @@ ApiTokenSchema.index(
   { expiresAt: 1 },
   {
     expireAfterSeconds: 30 * 24 * 60 * 60, // 30 days after expiresAt
-    partialFilterExpression: { expiresAt: { $ne: null } },
+    // $type, not $ne: null. MongoDB rejects $ne in partial indexes, so the
+    // old filter meant this TTL index was never actually built.
+    partialFilterExpression: { expiresAt: { $type: "date" } },
   }
 );
 

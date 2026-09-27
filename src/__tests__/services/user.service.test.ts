@@ -10,12 +10,22 @@ jest.mock("../../services/notification.service", () => ({
 
 import { UserService, UserNotFoundError, UserValidationError } from "../../services/user.service";
 import { UserModel } from "../../models/user.model";
-import { createTestUser, getTestPassword } from "../factories";
+import { WaitlistModel } from "../../models/waitlist.model";
+import { CreateUserDTO } from "../../dtos/user.dto";
+import { createTestUser, createTestInvite, getTestPassword } from "../factories";
 import bcrypt from "bcrypt";
 
 describe("UserService", () => {
   // ----- createUser -----
   describe("createUser", () => {
+    // Signup is invite-only during early access: each test gets a fresh code
+    let inviteCode: string;
+
+    beforeEach(async () => {
+      const invite = await createTestInvite();
+      inviteCode = invite.inviteCode!;
+    });
+
     it("should create a new user and return token", async () => {
       const result = await UserService.createUser({
         email: "newuser@example.com",
@@ -23,6 +33,7 @@ describe("UserService", () => {
         lastName: "Doe",
         password: "SecurePass123!",
         role: "developer",
+        inviteCode,
       });
 
       expect(result).toHaveProperty("_id");
@@ -35,6 +46,20 @@ describe("UserService", () => {
       expect((result as any).password).toBeUndefined();
     });
 
+    it("should mark the invite code as used", async () => {
+      await UserService.createUser({
+        email: "invitee@example.com",
+        firstName: "In",
+        lastName: "Vitee",
+        password: "SecurePass123!",
+        role: "developer",
+        inviteCode,
+      });
+
+      const entry = await WaitlistModel.findOne({ inviteCode });
+      expect(entry!.signedUpAt).toBeInstanceOf(Date);
+    });
+
     it("should hash the password before saving", async () => {
       await UserService.createUser({
         email: "hash-test@example.com",
@@ -42,6 +67,7 @@ describe("UserService", () => {
         lastName: "Test",
         password: "PlainTextPassword",
         role: "developer",
+        inviteCode,
       });
 
       const user = await UserModel.findOne({ email: "hash-test@example.com" });
@@ -61,8 +87,70 @@ describe("UserService", () => {
           lastName: "User",
           password: "SomePassword123!",
           role: "developer",
+          inviteCode,
         })
       ).rejects.toThrow("User with this email already exists");
+    });
+
+    it("should require an invite code", async () => {
+      await expect(
+        UserService.createUser({
+          email: "no-invite@example.com",
+          firstName: "No",
+          lastName: "Invite",
+          password: "SomePassword123!",
+          role: "developer",
+        })
+      ).rejects.toThrow("An invite code is required");
+    });
+
+    it("should reject an unknown invite code", async () => {
+      await expect(
+        UserService.createUser({
+          email: "bad-invite@example.com",
+          firstName: "Bad",
+          lastName: "Invite",
+          password: "SomePassword123!",
+          role: "developer",
+          inviteCode: "not-a-real-code",
+        })
+      ).rejects.toThrow("Invalid or expired invite code.");
+    });
+
+    it("should reject an invite code that is not approved", async () => {
+      const pending = await createTestInvite({ status: "pending" });
+      await expect(
+        UserService.createUser({
+          email: "pending-invite@example.com",
+          firstName: "Pending",
+          lastName: "Invite",
+          password: "SomePassword123!",
+          role: "developer",
+          inviteCode: pending.inviteCode!,
+        })
+      ).rejects.toThrow("Invalid or expired invite code.");
+    });
+
+    it("should reject an invite code that was already used", async () => {
+      await UserService.createUser({
+        email: "first@example.com",
+        firstName: "First",
+        lastName: "User",
+        password: "SomePassword123!",
+        role: "developer",
+        inviteCode,
+      });
+
+      await expect(
+        UserService.createUser({
+          email: "second@example.com",
+          firstName: "Second",
+          lastName: "User",
+          password: "SomePassword123!",
+          role: "developer",
+          inviteCode,
+        })
+      ).rejects.toThrow("This invite code has already been used.");
     });
 
     it("should throw validation error for missing email", async () => {
@@ -102,13 +190,14 @@ describe("UserService", () => {
     });
 
     it("should default role to developer if not specified", async () => {
+      // role is typed as required but the service defaults it; omit it here
       const result = await UserService.createUser({
         email: "default-role@example.com",
         firstName: "Default",
         lastName: "Role",
         password: "SomePass123!",
-        role: "developer",
-      });
+        inviteCode,
+      } as CreateUserDTO);
 
       expect(result.role).toBe("developer");
     });
@@ -129,13 +218,14 @@ describe("UserService", () => {
       expect((result as any).email).toBe("login@example.com");
     });
 
-    it("should throw for non-existent user", async () => {
-      await expect(
-        UserService.loginUser({
-          email: "noone@example.com",
-          password: "whatever",
-        })
-      ).rejects.toThrow(UserNotFoundError);
+    it("should reject a non-existent user with the same error as a wrong password", async () => {
+      // No distinct "user not found": that would let callers enumerate accounts
+      const login = UserService.loginUser({
+        email: "noone@example.com",
+        password: "whatever",
+      });
+      await expect(login).rejects.toThrow(UserValidationError);
+      await expect(login).rejects.toThrow("Invalid email or password");
     });
 
     it("should throw for wrong password", async () => {

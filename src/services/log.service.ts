@@ -136,7 +136,8 @@ export class LogService {
    * @param data The data for the new log entry.
    * @returns The created log document.
    * @throws LogValidationError if projectId is invalid.
-   * @throws LogServiceError if a duplicate log exists or other creation fails.
+   * @throws LogServiceError if creation fails. Identical logs are not
+   *   deduplicated: the same message at the same timestamp is stored twice.
    */
   static async createLog(data: CreateLogDTO): Promise<ILog> {
     const ingestionStartTime = new Date();

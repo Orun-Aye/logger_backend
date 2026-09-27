@@ -1,18 +1,31 @@
 import mongoose from "mongoose";
+import { MongoMemoryServer } from "mongodb-memory-server";
 
-// Set environment variables for tests before any imports resolve config
+// Set environment variables for tests before any imports resolve config.
+// MONGODB_URI only satisfies config's required-var check: tests connect to the
+// in-memory server below. The .invalid host fails fast if anything tries to
+// connect through config instead of silently reaching a real local database.
 process.env.JWT_SECRET = "test-jwt-secret-key-for-testing";
-process.env.MONGODB_URI = "mongodb://localhost:27018/apperio_test";
+process.env.MONGODB_URI = "mongodb://mongodb-memory-server.invalid/apperio_test";
 process.env.PORT = "5555";
 process.env.NODE_ENV = "test";
 process.env.REDIS_ENABLED = "false";
 
-// Use a unique database name per test suite to avoid collisions
-const TEST_DB_URI = `mongodb://localhost:27018/apperio_test_${process.env.JEST_WORKER_ID || "0"}`;
+// First boot on a machine downloads the mongod binary (version pinned in
+// package.json "config.mongodbMemoryServer"), which can exceed testTimeout.
+const BOOT_TIMEOUT_MS = 120_000;
+
+// setupFilesAfterEnv runs per test file, so each suite gets its own server
+let mongod: MongoMemoryServer | undefined;
 
 beforeAll(async () => {
-  await mongoose.connect(TEST_DB_URI);
-});
+  mongod = await MongoMemoryServer.create();
+  await mongoose.connect(mongod.getUri("apperio_test"));
+  // Each suite starts on an empty database, so wait for index builds.
+  // Otherwise unique indexes (user email, project name, error-group
+  // fingerprint) may not exist yet when a test relies on them.
+  await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
+}, BOOT_TIMEOUT_MS);
 
 afterEach(async () => {
   const collections = mongoose.connection.collections;
@@ -22,9 +35,6 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  // Drop the test database to clean up
-  if (mongoose.connection.db) {
-    await mongoose.connection.db.dropDatabase();
-  }
   await mongoose.disconnect();
+  await mongod?.stop();
 });

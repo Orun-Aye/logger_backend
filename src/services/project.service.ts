@@ -812,6 +812,9 @@ export class ProjectService {
         aggregatedMetrics,
       };
     } catch (error) {
+      if (error instanceof ProjectValidationError) {
+        throw error;
+      }
       throw new Error(`Failed to fetch projects: ${error}`);
     }
   }
