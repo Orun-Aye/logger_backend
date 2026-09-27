@@ -200,6 +200,22 @@ export const samplingConfigSchema = z.object({
 
 export type SamplingConfigInput = z.infer<typeof samplingConfigSchema>;
 
+/**
+ * Schema for per-project notification settings.
+ * errorGroups.environments: empty array = notify for all environments.
+ */
+export const notificationSettingsSchema = z.object({
+  errorGroups: z.object({
+    enabled: z.boolean(),
+    environments: z
+      .array(z.string().trim().min(1).max(64))
+      .max(20)
+      .transform((envs) => Array.from(new Set(envs))),
+  }),
+});
+
+export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
+
 // Type exports
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

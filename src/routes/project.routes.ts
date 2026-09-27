@@ -2,7 +2,11 @@ import { Router } from "express";
 import { ProjectController } from "../controllers/project.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validation.middleware";
-import { samplingConfigSchema } from "../validators/project.validator";
+import { authorizeProjectAccess } from "../middleware/authorizeProjectAccess";
+import {
+  samplingConfigSchema,
+  notificationSettingsSchema,
+} from "../validators/project.validator";
 
 const router = Router();
 
@@ -36,6 +40,7 @@ router.post("/:projectId/tags", verifyToken, ProjectController.addTags);
 router.delete("/:projectId/tags", verifyToken, ProjectController.removeTags);
 router.put("/:projectId/rate-limit", verifyToken, ProjectController.updateRateLimit);
 router.put("/:projectId/sampling-config", verifyToken, validate(samplingConfigSchema, "body"), ProjectController.updateSamplingConfig);
+router.put("/:projectId/notification-settings", verifyToken, authorizeProjectAccess, validate(notificationSettingsSchema, "body"), ProjectController.updateNotificationSettings);
 router.post("/:projectId/sync-log-count", verifyToken, ProjectController.syncLogCount);
 router.post("/:projectId/increment-log-count", verifyToken, ProjectController.incrementLogCount);
 router.post("/:projectId/team-members", verifyToken, ProjectController.addTeamMember);

@@ -6,7 +6,8 @@ import {
   ProjectOperationError,
 } from "../services/project.service";
 import { CreateProjectDTO, UpdateProjectDTO } from "../dtos/project.dto";
-import { ProjectModel } from "../models/project.model";
+import { IProject, ProjectModel } from "../models/project.model";
+import { NotificationSettingsInput } from "../validators/project.validator";
 
 /**
  * Response interface for consistent API responses
@@ -802,6 +803,58 @@ export class ProjectController {
       });
     } catch (error: any) {
       return res.status(500).json({ status: "error", message: error.message });
+    }
+  }
+
+  // =============================================================================
+  // NOTIFICATION SETTINGS
+  // =============================================================================
+
+  /**
+   * Updates owner notification settings for a project (owner or admin only).
+   * PUT /api/projects/:projectId/notification-settings
+   *
+   * Body: { errorGroups: { enabled: boolean, environments: string[] } }
+   * Expects authorizeProjectAccess to have populated req.project.
+   */
+  static async updateNotificationSettings(req: Request, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const project = req.project as IProject;
+
+      const isOwner = project.ownerId?.toString() === req.userId;
+      const isAdmin = project.teamMembers.some(
+        (m) => m.user._id.toString() === req.userId && m.role === "admin"
+      );
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({
+          status: "error",
+          message: "Only the project owner or an admin can change notification settings",
+        });
+      }
+
+      const notificationSettings = req.body as NotificationSettingsInput;
+      const updated = await ProjectModel.findByIdAndUpdate(
+        projectId,
+        { $set: { notificationSettings } },
+        { new: true, runValidators: true, projection: { notificationSettings: 1 } }
+      );
+
+      if (!updated) {
+        return res.status(404).json({ status: "error", message: "Project not found" });
+      }
+
+      return res.status(200).json({
+        status: "success",
+        message: "Notification settings updated",
+        data: { notificationSettings: updated.notificationSettings },
+      });
+    } catch (error) {
+      return ProjectController.handleError(
+        error as Error,
+        res,
+        "Failed to update notification settings"
+      );
     }
   }
 

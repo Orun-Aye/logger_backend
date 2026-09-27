@@ -25,6 +25,14 @@ export interface IProject extends Document {
       linkedBy: Types.ObjectId;
     };
   };
+  notificationSettings?: {
+    errorGroups?: {
+      /** Owner notifications (in-app + email) for new/regressed error groups. */
+      enabled?: boolean;
+      /** Environments that trigger notifications. Empty = all environments. */
+      environments?: string[];
+    };
+  };
   rateLimitConfig?: {
     maxRequestsPerMinute: number;
     burstLimit: number
@@ -81,6 +89,12 @@ const ProjectSchema: Schema<IProject> = new Schema(
         },
         required: false,
         default: undefined,
+      },
+    },
+    notificationSettings: {
+      errorGroups: {
+        enabled: { type: Boolean, default: true },
+        environments: { type: [String], default: ["production"] },
       },
     },
     rateLimitConfig: {

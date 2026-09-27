@@ -31,6 +31,29 @@ const NOTIFY_COOLDOWN_MS = 30 * 60 * 1000;
 /** Candidate window for suspect commits when release data is missing. */
 const SUSPECT_WINDOW_DAYS = 7;
 const SUSPECT_CANDIDATE_LIMIT = 20;
+/** Applied when a project has no stored notificationSettings (pre-A12 projects). */
+const DEFAULT_NOTIFY_ENVIRONMENTS = ["production"];
+
+type ErrorGroupNotificationSettings = {
+  enabled?: boolean;
+  environments?: string[];
+};
+
+/**
+ * Whether an error event in `environment` should notify the project owner.
+ * An empty environment list means "all environments". Events with no
+ * environment tag can't be classified, so they notify rather than go silent.
+ */
+export function shouldNotifyForEnvironment(
+  settings: ErrorGroupNotificationSettings | undefined,
+  environment: string | undefined
+): boolean {
+  if (settings?.enabled === false) return false;
+  const allowed = settings?.environments ?? DEFAULT_NOTIFY_ENVIRONMENTS;
+  if (allowed.length === 0 || !environment) return true;
+  const env = environment.trim().toLowerCase();
+  return allowed.some((a) => a.trim().toLowerCase() === env);
+}
 
 export class ErrorGroupService {
   // ------------------------------------------------------------------
@@ -71,6 +94,7 @@ export class ErrorGroupService {
           releaseFirstSeen: log.release,
           status: "unresolved",
           regressed: false,
+          environments: log.environment ? [log.environment] : [],
         },
         $set: {
           lastSeen: occurredAt,
@@ -80,10 +104,9 @@ export class ErrorGroupService {
         },
         $inc: { count: 1 },
       };
-      const addToSet: Record<string, string> = {};
-      if (log.environment) addToSet.environments = log.environment;
-      if (log.service) addToSet.services = log.service;
-      if (Object.keys(addToSet).length > 0) update.$addToSet = addToSet;
+      // Environments are added in a separate step below so we can tell when
+      // a group reaches an environment for the first time.
+      if (log.service) update.$addToSet = { services: log.service };
 
       const group = await ErrorGroupModel.findOneAndUpdate(
         { projectId: log.projectId, fingerprint },
@@ -92,6 +115,20 @@ export class ErrorGroupService {
       );
 
       const isNew = group.count === 1;
+
+      let reachedNewEnvironment = false;
+      if (
+        !isNew &&
+        log.environment &&
+        !group.environments.includes(log.environment)
+      ) {
+        reachedNewEnvironment = true;
+        await ErrorGroupModel.updateOne(
+          { _id: group._id },
+          { $addToSet: { environments: log.environment } }
+        );
+        group.environments.push(log.environment);
+      }
 
       // Approximate distinct sessions with a capped rolling sample
       if (log.sessionId && group.sessionSample.length < SESSION_SAMPLE_CAP) {
@@ -124,8 +161,18 @@ export class ErrorGroupService {
         );
       }
 
-      if (isNew || regressed) {
-        await this.notifyOwner(group, isNew ? "new" : "regressed");
+      // A group first seen in a filtered-out environment (e.g. staging) was
+      // never notified. When it spreads to another environment, give it the
+      // "new" notification it skipped, so production errors are not missed.
+      const catchUp =
+        !isNew && !regressed && reachedNewEnvironment && !group.lastNotifiedAt;
+
+      if (isNew || regressed || catchUp) {
+        await this.notifyOwner(
+          group,
+          regressed ? "regressed" : "new",
+          log.environment
+        );
       }
     } catch (error) {
       logger.error("ErrorGroupService: recordError failed", {
@@ -137,36 +184,50 @@ export class ErrorGroupService {
 
   /**
    * Zero-config owner notification: in-app (+WebSocket) always, email when
-   * the platform has email configured. Deduped per group via lastNotifiedAt.
+   * the platform has email configured. Respects the project's
+   * notificationSettings.errorGroups (on/off + environment filter).
+   * Deduped per group via an atomic claim on lastNotifiedAt.
    */
   private static async notifyOwner(
     group: IErrorGroup,
-    kind: "new" | "regressed"
+    kind: "new" | "regressed",
+    environment: string | undefined
   ): Promise<void> {
-    // Cooldown guard (new groups fire once by construction, regressions can flap)
+    const project = await ProjectModel.findById(group.projectId)
+      .select("name ownerId notificationSettings")
+      .lean();
+    if (!project) return;
+
     if (
-      kind === "regressed" &&
-      group.lastNotifiedAt &&
-      Date.now() - group.lastNotifiedAt.getTime() < NOTIFY_COOLDOWN_MS
+      !shouldNotifyForEnvironment(
+        project.notificationSettings?.errorGroups,
+        environment
+      )
     ) {
       return;
     }
 
-    const project = await ProjectModel.findById(group.projectId)
-      .select("name ownerId integrationSettings")
-      .lean();
-    if (!project) return;
-
-    // Per-project opt-out
-    if ((project as any).integrationSettings?.errorNotifications === false) {
-      return;
-    }
-
-    const ownerId = (project as any).ownerId?.toString();
+    const ownerId = project.ownerId?.toString();
     if (!ownerId) return;
 
-    const projectName = (project as any).name || "your project";
-    const environment = group.environments[group.environments.length - 1];
+    // Claim the notification so concurrent events for the same group send
+    // once. "new" fires only if never notified; regressions can flap, so they
+    // get a cooldown instead.
+    const claimed = await ErrorGroupModel.updateOne(
+      kind === "new"
+        ? { _id: group._id, lastNotifiedAt: null }
+        : {
+            _id: group._id,
+            $or: [
+              { lastNotifiedAt: null },
+              { lastNotifiedAt: { $lt: new Date(Date.now() - NOTIFY_COOLDOWN_MS) } },
+            ],
+          },
+      { $set: { lastNotifiedAt: new Date() } }
+    );
+    if (claimed.modifiedCount === 0) return;
+
+    const projectName = project.name || "your project";
     const groupUrl = `${config.frontend.url}/projects/${group.projectId}/issues?group=${group._id}`;
 
     const headline =
@@ -174,11 +235,6 @@ export class ErrorGroupService {
         ? `New error in ${projectName}`
         : `Error is back in ${projectName}`;
     const message = `${headline}: ${group.title}${environment ? ` (${environment})` : ""}`;
-
-    await ErrorGroupModel.updateOne(
-      { _id: group._id },
-      { $set: { lastNotifiedAt: new Date() } }
-    );
 
     await NotificationService.sendInApp(ownerId, "error", message, {
       kind: kind === "new" ? "error_group_new" : "error_group_regressed",
@@ -195,7 +251,7 @@ export class ErrorGroupService {
         await NotificationService.sendEmail({
           to: [email],
           subject: `[Apperio] ${headline}`,
-          text: `${message}\n\nFirst seen: ${group.firstSeen.toISOString()}\nOccurrences: ${group.count}\n\nView it in Apperio: ${groupUrl}`,
+          text: `${message}\n\nFirst seen: ${group.firstSeen.toISOString()}\nOccurrences: ${group.count}\n\nView it in Apperio: ${groupUrl}\n\nChange notification settings: ${config.frontend.url}/projects/${group.projectId}/settings/notifications`,
           html: `
             <div style="font-family: sans-serif; max-width: 560px;">
               <h2 style="color: #0b1220;">${headline}</h2>
@@ -210,7 +266,7 @@ export class ErrorGroupService {
                   View error in Apperio
                 </a>
               </p>
-              <p style="color: #999; font-size: 12px;">You get this because you own ${this.escapeHtml(projectName)} on Apperio. Disable in project settings.</p>
+              <p style="color: #999; font-size: 12px;">You get this because you own ${this.escapeHtml(projectName)} on Apperio. <a href="${config.frontend.url}/projects/${group.projectId}/settings/notifications" style="color: #999;">Change notification settings</a>.</p>
             </div>
           `,
         });
