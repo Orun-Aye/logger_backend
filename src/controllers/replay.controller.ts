@@ -1,5 +1,10 @@
 import { Request, Response } from 'express';
 import { replayService } from '../services/replay.service';
+import { AppError } from '../errors';
+
+/** Far beyond any real session (a day of 10s segments is ~8,640) */
+const MAX_SEGMENT_INDEX = 100_000;
+const MAX_LOOKUP_SESSIONS = 100;
 
 class ReplayController {
   /**
@@ -8,7 +13,13 @@ class ReplayController {
   async ingestReplay(req: Request, res: Response): Promise<void> {
     try {
       const { projectId } = req.params;
-      const { sessionId, events } = req.body;
+      const { sessionId, events, segmentIndex } = req.body;
+
+      // The API key identifies the project; it must be the one in the URL
+      if (req.projectId !== projectId) {
+        res.status(403).json({ status: 'error', message: 'API key does not belong to this project' });
+        return;
+      }
 
       if (!sessionId || typeof sessionId !== 'string') {
         res.status(400).json({ status: 'error', message: 'sessionId is required' });
@@ -20,14 +31,19 @@ class ReplayController {
         return;
       }
 
-      // 5MB size guard
-      const payloadSize = JSON.stringify(events).length;
-      if (payloadSize > 5 * 1024 * 1024) {
-        res.status(413).json({ status: 'error', message: 'Payload too large. Max 5MB per segment.' });
+      if (
+        segmentIndex !== undefined &&
+        !(Number.isInteger(segmentIndex) && segmentIndex >= 0 && segmentIndex <= MAX_SEGMENT_INDEX)
+      ) {
+        res.status(400).json({
+          status: 'error',
+          message: `segmentIndex must be an integer from 0 to ${MAX_SEGMENT_INDEX}`,
+        });
         return;
       }
 
-      const segment = await replayService.ingestSegment(projectId, sessionId, events);
+      // Size and event-count caps are enforced in the service (413)
+      const segment = await replayService.ingestSegment(projectId, sessionId, events, segmentIndex);
 
       res.status(201).json({
         status: 'success',
@@ -37,6 +53,10 @@ class ReplayController {
         },
       });
     } catch (error: any) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ status: 'error', message: error.message, details: error.details });
+        return;
+      }
       res.status(500).json({ status: 'error', message: error.message || 'Failed to ingest replay data' });
     }
   }
@@ -63,6 +83,32 @@ class ReplayController {
       });
     } catch (error: any) {
       res.status(500).json({ status: 'error', message: error.message || 'Failed to list sessions' });
+    }
+  }
+
+  /**
+   * GET /:projectId/replay/available?sessionIds=a,b — Which sessions have a
+   * playable replay (JWT auth). Lets the dashboard show "Watch replay" only
+   * where it works, without downloading any recordings.
+   */
+  async getAvailableReplays(req: Request, res: Response): Promise<void> {
+    try {
+      const { projectId } = req.params;
+      const raw = typeof req.query.sessionIds === 'string' ? req.query.sessionIds : '';
+      const sessionIds = [...new Set(raw.split(',').map((id) => id.trim()).filter(Boolean))];
+
+      if (sessionIds.length > MAX_LOOKUP_SESSIONS) {
+        res.status(400).json({
+          status: 'error',
+          message: `Look up at most ${MAX_LOOKUP_SESSIONS} sessions at a time`,
+        });
+        return;
+      }
+
+      const available = await replayService.findSessionsWithReplay(projectId, sessionIds);
+      res.json({ status: 'success', data: { sessionIds: available } });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', message: error.message || 'Failed to look up replays' });
     }
   }
 

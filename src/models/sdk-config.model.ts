@@ -41,6 +41,13 @@ export interface ISDKConfig extends Document {
     }>;
   };
   
+  // Session replay, set from the dashboard. The SDK reads it at startup
+  // unless the app's code sets replay.enabled itself.
+  replay: {
+    enabled: boolean;
+    sampleRate: number;
+  };
+
   updatedAt: Date;
   createdAt: Date;
 }
@@ -83,6 +90,11 @@ const SDKConfigSchema = new Schema<ISDKConfig>({
       severity: { type: String },
       category: { type: String }
     }]
+  },
+
+  replay: {
+    enabled: { type: Boolean, default: false },
+    sampleRate: { type: Number, default: 0.1, min: 0, max: 1 }
   }
 }, { timestamps: true });
 

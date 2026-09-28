@@ -13,6 +13,29 @@ export class SDKConfigService {
     ).lean();
   }
 
+  static async getReplaySettings(projectId: string): Promise<ISDKConfig['replay']> {
+    const config = await this.getOrCreateDefault(projectId);
+    return {
+      enabled: config.replay?.enabled ?? false,
+      sampleRate: config.replay?.sampleRate ?? 0.1,
+    };
+  }
+
+  static async updateReplaySettings(
+    projectId: string,
+    settings: Partial<ISDKConfig['replay']>
+  ): Promise<ISDKConfig['replay']> {
+    const $set: Record<string, unknown> = {};
+    if (settings.enabled !== undefined) $set['replay.enabled'] = settings.enabled;
+    if (settings.sampleRate !== undefined) $set['replay.sampleRate'] = settings.sampleRate;
+    await SDKConfigModel.findOneAndUpdate(
+      { projectId },
+      { $set },
+      { upsert: true, new: true, runValidators: true }
+    );
+    return this.getReplaySettings(projectId);
+  }
+
   static async getOrCreateDefault(projectId: string): Promise<ISDKConfig> {
     let config = await this.getConfig(projectId);
     if (!config) {

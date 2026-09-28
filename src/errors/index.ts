@@ -98,6 +98,17 @@ export class RateLimitError extends AppError {
 }
 
 /**
+ * Payload too large error (413)
+ * Used when a request body exceeds a size or count cap
+ */
+export class PayloadTooLargeError extends AppError {
+  constructor(message: string = "Payload too large", details?: any) {
+    super(message, "PAYLOAD_TOO_LARGE", 413, details);
+    Object.setPrototypeOf(this, PayloadTooLargeError.prototype);
+  }
+}
+
+/**
  * Internal server error (500)
  * Used for unexpected errors
  */
