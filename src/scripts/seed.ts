@@ -10,10 +10,11 @@
  *   EscalationPolicy, Notification, UserPreference,
  *   SavedSearch, Anomaly, MaintenanceWindow, SourceMap, SDKConfig
  *
- * Usage:
+ * Usage (from logger_backend/, reads MONGODB_URI from .env):
  *   npx tsx src/scripts/seed.ts
  */
 
+import "dotenv/config";
 import mongoose, { Types } from "mongoose";
 import { LogModel } from "../models/log.model";
 import { ProjectModel } from "../models/project.model";
@@ -33,9 +34,7 @@ import { SDKConfigModel } from "../models/sdk-config.model";
 // Config
 // ---------------------------------------------------------------------------
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://femiadmin:betterbegood@cluster0.wq4k96o.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const DAYS_BACK = 30;
 const NOW = Date.now();
@@ -1098,6 +1097,10 @@ function makeSDKConfig(projectId: string): any {
 // ---------------------------------------------------------------------------
 
 async function seed() {
+  if (!MONGODB_URI) {
+    console.error("MONGODB_URI is not set. Add it to logger_backend/.env or pass it inline.");
+    process.exit(1);
+  }
   console.log("Connecting to MongoDB...");
   await mongoose.connect(MONGODB_URI);
   console.log("Connected\n");
@@ -1113,7 +1116,7 @@ async function seed() {
 
   // ── Create a fully-populated project ─────────────────────────────────
   // Delete previous seed project if it exists (by name pattern)
-  const existingProject = await ProjectModel.findOne({ name: { $regex: /^Apperio Demo/ } });
+  const existingProject = await ProjectModel.findOne({ ownerId: userId, name: { $regex: /^Apperio Demo/ } });
   if (existingProject) {
     const pid = existingProject._id;
     const pidStr = pid.toString();
@@ -1123,13 +1126,13 @@ async function seed() {
       AlertRuleModel.deleteMany({ projectId: pid }),
       AlertEventModel.deleteMany({ projectId: pid }),
       EscalationPolicyModel.deleteMany({ projectId: pid }),
-      NotificationModel.deleteMany({ userId }),
+      NotificationModel.deleteMany({ userId, "metadata.seed": true }),
       SavedSearchModel.deleteMany({ projectId: pid }),
       AnomalyModel.deleteMany({ projectId: pidStr }),
       MaintenanceWindowModel.deleteMany({ projectId: pid }),
       SourceMapModel.deleteMany({ projectId: pidStr }),
       SDKConfigModel.deleteMany({ projectId: pidStr }),
-      UserPreferenceModel.deleteMany({ userId }),
+      UserPreferenceModel.updateOne({ userId }, { $pull: { favoriteProjects: pid } }),
       ProjectModel.deleteOne({ _id: pid }),
     ]);
     console.log("   Cleaned.\n");
@@ -1270,7 +1273,11 @@ async function seed() {
 
   // ── Notifications ────────────────────────────────────────────────────
   console.log("Creating notifications...");
-  const notifications = makeNotifications(userId);
+  // Tag seeded notifications so a re-run only removes these, not the user's real ones
+  const notifications = makeNotifications(userId).map((n) => ({
+    ...n,
+    metadata: { ...n.metadata, seed: true },
+  }));
   await NotificationModel.insertMany(notifications);
   console.log(`   Created ${notifications.length} notifications`);
 
@@ -1278,7 +1285,7 @@ async function seed() {
   console.log("Creating user preferences...");
   await UserPreferenceModel.findOneAndUpdate(
     { userId },
-    { userId, favoriteProjects: [projectId] },
+    { $addToSet: { favoriteProjects: projectId } },
     { upsert: true, new: true },
   );
   console.log("   Created user preferences (1 favorite project)");
