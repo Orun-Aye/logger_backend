@@ -606,7 +606,11 @@ app.use(errorHandlerMiddleware);
       logger.info("Query timeouts configured");
 
       // Initialize background jobs
-      initializeJobs({ retention: config.retention, features: config.features });
+      initializeJobs({
+        retention: config.retention,
+        features: config.features,
+        keepAlive: config.keepAlive,
+      });
       logger.info("Background jobs initialized");
 
       // Start server

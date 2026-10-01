@@ -739,6 +739,18 @@ The backend is deployed on Vercel at `https://apperioserver.onrender.com/api/v1`
 
 **Note**: WebSocket real-time features are limited on Vercel due to serverless constraints. Use polling fallback for real-time updates.
 
+### Render free tier: keep-alive
+
+Render spins a free web service down after 15 minutes without inbound traffic, and the next request then waits ~1 minute for a cold start. Two pingers hit `GET /api/v1/live` (no auth, no database work) every 12 minutes to prevent that:
+
+1. **Self-ping job** (`src/jobs/keep-alive.job.ts`): runs inside the server and pings its own public URL. Render sets `RENDER_EXTERNAL_URL` automatically, so it is on by default there and off locally.
+   - `KEEP_ALIVE_ENABLED` (default `true`): set to `false` to turn it off, e.g. after moving to a paid instance.
+   - `KEEP_ALIVE_URL`: overrides the URL to ping.
+   - `KEEP_ALIVE_INTERVAL_MS` (default `720000`, 12 minutes).
+2. **GitHub Actions workflow** (`.github/workflows/keep-alive.yml`): pings from outside on a schedule, so it can also wake the service if it has already gone to sleep. Set the repo variable `KEEP_ALIVE_URL` to point it somewhere else. Run it manually from the Actions tab to test it.
+
+Keeping one service awake all month uses ~744 of the 750 free instance hours Render gives each workspace, so a second always-on free service in the same workspace would run out.
+
 ### Self-Hosted
 
 For self-hosted deployments:

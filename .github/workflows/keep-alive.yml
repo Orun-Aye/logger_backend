@@ -1,0 +1,31 @@
+name: Keep backend awake
+
+# Render's free tier spins the backend down after 15 minutes without inbound
+# traffic. This pings it from outside every 12 minutes, and wakes it if it has
+# already gone to sleep. The server also pings itself (src/jobs/keep-alive.job.ts);
+# this workflow is the external backstop, since GitHub can delay scheduled runs.
+
+on:
+  schedule:
+    # Every 12 minutes, offset from :00 when GitHub's scheduler is busiest.
+    - cron: "5,17,29,41,53 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/v1/live
+        env:
+          URL: ${{ vars.KEEP_ALIVE_URL || 'https://apperioserver.onrender.com/api/v1/live' }}
+        # A cold start on Render can take ~1 minute, so allow a long timeout
+        # and retry the 502/503 responses served while the instance boots.
+        run: |
+          curl --fail --silent --show-error --location \
+            --max-time 90 --retry 3 --retry-delay 15 --retry-all-errors \
+            --user-agent "apperio-keep-alive" \
+            --output /dev/null --write-out "HTTP %{http_code} in %{time_total}s\n" \
+            "$URL"

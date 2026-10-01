@@ -267,6 +267,22 @@ export const config = {
     cronSchedule: getEnv("RETENTION_CRON_SCHEDULE", "0 2 * * *"),
     enabled: getEnvAsBoolean("RETENTION_JOB_ENABLED", true),
   },
+
+  /**
+   * Keep-alive self-ping (works around Render free-tier spin-down after
+   * 15 idle minutes). Render sets RENDER_EXTERNAL_URL automatically, so
+   * this stays off locally unless KEEP_ALIVE_URL is set.
+   */
+  keepAlive: {
+    enabled: getEnvAsBoolean("KEEP_ALIVE_ENABLED", true),
+    url: getEnv(
+      "KEEP_ALIVE_URL",
+      process.env.RENDER_EXTERNAL_URL
+        ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, "")}/api/v1/live`
+        : ""
+    ),
+    intervalMs: getEnvAsNumber("KEEP_ALIVE_INTERVAL_MS", 12 * 60 * 1000), // 12 minutes
+  },
 } as const;
 
 /**
