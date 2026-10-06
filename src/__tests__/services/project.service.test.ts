@@ -5,7 +5,7 @@ import {
   ProjectValidationError,
 } from "../../services/project.service";
 import { ProjectModel } from "../../models/project.model";
-import { createTestUser, createTestProject } from "../factories";
+import { createTestUser, createTestProject, createTestLog } from "../factories";
 
 describe("ProjectService", () => {
   let userId: string;
@@ -111,6 +111,81 @@ describe("ProjectService", () => {
         })
       ).rejects.toThrow(ProjectValidationError);
     });
+
+    it("should return a zero-filled 30-minute volume series for a 24h range", async () => {
+      const project = await createTestProject(userId);
+      const projectId = (project._id as Types.ObjectId).toString();
+      const ago = (minutes: number) =>
+        new Date(Date.now() - minutes * 60_000).toISOString();
+      await createTestLog(projectId, { timestamp: ago(5) });
+      await createTestLog(projectId, { timestamp: ago(6), level: "error" });
+      await createTestLog(projectId, { timestamp: ago(600) });
+      await createTestLog(projectId, { timestamp: ago(3000) }); // outside 24h
+
+      const result = await ProjectService.getProjectById(projectId, {
+        timeRange: 24,
+        includeRecommendations: false,
+      });
+      const volume = (result.analytics as any).trends.volume;
+
+      expect(volume.bucketMinutes).toBe(30);
+      // 48 half-hour buckets, plus one when the window straddles a boundary
+      expect(volume.buckets.length).toBeGreaterThanOrEqual(48);
+      expect(volume.buckets.length).toBeLessThanOrEqual(49);
+      const sum = (key: "totalLogs" | "errorLogs") =>
+        volume.buckets.reduce((n: number, b: any) => n + b[key], 0);
+      expect(sum("totalLogs")).toBe(3);
+      expect(sum("errorLogs")).toBe(1);
+      expect(volume.buckets.filter((b: any) => b.totalLogs === 0).length)
+        .toBeGreaterThan(40);
+    });
+
+    it("should average response time over network requests only", async () => {
+      const project = await createTestProject(userId);
+      const projectId = (project._id as Types.ObjectId).toString();
+      await createTestLog(projectId, {
+        eventType: "network",
+        data: { network: { url: "/api/a", duration: 100 } },
+      });
+      await createTestLog(projectId, {
+        eventType: "network",
+        data: { network: { url: "/api/b", duration: 300 } },
+      });
+      // A slow page load is not a response and must not drag the average up
+      await createTestLog(projectId, {
+        eventType: "performance",
+        data: { performance: { type: "navigation", duration: 8000 } },
+      });
+
+      const result = await ProjectService.getProjectById(projectId, {
+        timeRange: 24,
+        includeRecommendations: false,
+      });
+      const current = (result.analytics as any).responseTime.current;
+
+      expect(current.avgResponseTime).toBe(200);
+      expect(current.responseTimeCount).toBe(2);
+    });
+  });
+
+  // ----- syncLogCount -----
+  describe("syncLogCount", () => {
+    it("should store the live count and the newest log's time, not now", async () => {
+      const project = await createTestProject(userId, { logCount: 0 });
+      const projectId = (project._id as Types.ObjectId).toString();
+      const newest = new Date(Date.now() - 3 * 86_400_000);
+      await createTestLog(projectId, {
+        timestamp: new Date(newest.getTime() - 60_000).toISOString(),
+      });
+      await createTestLog(projectId, { timestamp: newest.toISOString() });
+
+      const result = await ProjectService.syncLogCount(projectId);
+
+      expect(result.actualCount).toBe(2);
+      const stored = await ProjectModel.findById(projectId).lean();
+      expect(stored!.logCount).toBe(2);
+      expect(stored!.lastIngestedAt!.getTime()).toBe(newest.getTime());
+    });
   });
 
   // ----- getProjectsByUser -----
@@ -140,6 +215,33 @@ describe("ProjectService", () => {
       await expect(
         ProjectService.getProjectsByUser("bad-id", { includeMetrics: false })
       ).rejects.toThrow(ProjectValidationError);
+    });
+
+    it("should count logs live and report the newest log as lastActivity", async () => {
+      // A stale stored counter, as left behind by ingestion that never bumped it
+      const project = await createTestProject(userId, { logCount: 0 });
+      const projectId = (project._id as Types.ObjectId).toString();
+      const newest = new Date(Date.now() - 60_000).toISOString();
+      await createTestLog(projectId, {
+        timestamp: new Date(Date.now() - 9 * 86_400_000).toISOString(),
+      });
+      await createTestLog(projectId, { timestamp: newest });
+
+      const result = await ProjectService.getProjectsByUser(userId);
+      const metrics = (result.projects[0] as any).metrics;
+
+      expect(metrics.totalLogs).toBe(2);
+      expect(metrics.lastActivity).toBe(newest);
+    });
+
+    it("should report zero logs and no activity for an empty project", async () => {
+      await createTestProject(userId, { logCount: 7019 });
+
+      const result = await ProjectService.getProjectsByUser(userId);
+      const metrics = (result.projects[0] as any).metrics;
+
+      expect(metrics.totalLogs).toBe(0);
+      expect(metrics.lastActivity).toBeNull();
     });
   });
 

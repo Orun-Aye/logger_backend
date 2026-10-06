@@ -12,6 +12,7 @@ import {
   LogValidationError,
 } from "../../services/log.service";
 import { LogModel } from "../../models/log.model";
+import { ProjectModel } from "../../models/project.model";
 import { createTestUser, createTestProject, createTestLog } from "../factories";
 import { LogLevel } from "../../dtos/log.dto";
 
@@ -103,6 +104,36 @@ describe("LogService", () => {
       expect(result.ingestionStartTime).toBeDefined();
       expect(result.ingestionEndTime).toBeDefined();
       expect(result.ingestionLatency).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should bump the project's logCount and lastIngestedAt but not updatedAt", async () => {
+      const before = await ProjectModel.findById(projectId).lean();
+
+      await LogService.createLog({ projectId, level: LogLevel.INFO, message: "one" });
+      await LogService.createLog({ projectId, level: LogLevel.INFO, message: "two" });
+
+      const after = await ProjectModel.findById(projectId).lean();
+      expect(after!.logCount).toBe((before!.logCount ?? 0) + 2);
+      expect(after!.lastIngestedAt).toBeInstanceOf(Date);
+      expect(after!.updatedAt.getTime()).toBe(before!.updatedAt.getTime());
+    });
+  });
+
+  // ----- batchCreate -----
+  describe("batchCreate", () => {
+    it("should add the batch's success count to the project's logCount", async () => {
+      const result = await LogService.batchCreate(projectId, {
+        logs: [
+          { level: "info", message: "a" },
+          { level: "warn", message: "b" },
+          { level: "error", message: "c" },
+        ],
+      } as any);
+
+      expect(result.success).toBe(3);
+      const project = await ProjectModel.findById(projectId).lean();
+      expect(project!.logCount).toBe(3);
+      expect(project!.lastIngestedAt).toBeInstanceOf(Date);
     });
   });
 
@@ -204,6 +235,103 @@ describe("LogService", () => {
 
       expect(result.logs.length).toBe(2);
       expect(result.pagination.totalRecords).toBe(3);
+    });
+
+    it("should filter by multiple environments", async () => {
+      await createTestLog(projectId, { environment: "development" });
+
+      const result = await LogService.getAllLogs({
+        projectId,
+        environments: ["staging", "development"],
+      });
+
+      expect(result.logs.length).toBe(2);
+    });
+
+    it("should filter by multiple event types", async () => {
+      await createTestLog(projectId, { eventType: "network" });
+      await createTestLog(projectId, { eventType: "pageview" });
+      await createTestLog(projectId, { eventType: "performance" });
+
+      const result = await LogService.getAllLogs({
+        projectId,
+        eventTypes: ["network", "pageview"],
+      });
+
+      expect(result.logs.map((l) => l.eventType).sort()).toEqual([
+        "network",
+        "pageview",
+      ]);
+    });
+  });
+
+  // ----- getLogsAcrossProjects -----
+  describe("getLogsAcrossProjects", () => {
+    let userId: string;
+    let ownedA: string;
+    let ownedB: string;
+    let foreign: string;
+
+    beforeEach(async () => {
+      const user = await createTestUser();
+      userId = (user._id as Types.ObjectId).toString();
+      ownedA = (await createTestProject(user._id as any))._id.toString();
+      ownedB = (await createTestProject(user._id as any))._id.toString();
+
+      const stranger = await createTestUser();
+      foreign = (await createTestProject(stranger._id as any))._id.toString();
+
+      await createTestLog(ownedA, { message: "from A" });
+      await createTestLog(ownedB, { message: "from B", level: "error" });
+      await createTestLog(foreign, { message: "not yours" });
+    });
+
+    it("should return logs from every project the user can access", async () => {
+      const result = await LogService.getLogsAcrossProjects(userId, {});
+
+      expect(result.logs.map((l) => l.message).sort()).toEqual(["from A", "from B"]);
+      expect(result.pagination.totalRecords).toBe(2);
+    });
+
+    it("should include projects where the user is only a team member", async () => {
+      await ProjectModel.updateOne(
+        { _id: foreign },
+        { $push: { teamMembers: { user: new Types.ObjectId(userId), role: "viewer" } } }
+      );
+
+      const result = await LogService.getLogsAcrossProjects(userId, {});
+
+      expect(result.logs.map((l) => l.message)).toContain("not yours");
+    });
+
+    it("should narrow to requested projects and drop ones the user cannot access", async () => {
+      const result = await LogService.getLogsAcrossProjects(userId, {}, [ownedB, foreign]);
+
+      expect(result.logs.map((l) => l.message)).toEqual(["from B"]);
+    });
+
+    it("should skip archived projects", async () => {
+      await ProjectModel.updateOne({ _id: ownedA }, { isActive: false });
+
+      const result = await LogService.getLogsAcrossProjects(userId, {});
+
+      expect(result.logs.map((l) => l.message)).toEqual(["from B"]);
+    });
+
+    it("should apply the same filters as getAllLogs", async () => {
+      const result = await LogService.getLogsAcrossProjects(userId, {
+        levels: [LogLevel.ERROR],
+      });
+
+      expect(result.logs.map((l) => l.message)).toEqual(["from B"]);
+    });
+
+    it("should ignore filters.projectId", async () => {
+      const result = await LogService.getLogsAcrossProjects(userId, {
+        projectId: foreign,
+      });
+
+      expect(result.logs.map((l) => l.message)).not.toContain("not yours");
     });
   });
 

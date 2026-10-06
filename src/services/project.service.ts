@@ -11,6 +11,17 @@ import {
   UsageStatisticsData,
 } from "../types/app";
 
+/**
+ * Response time is fetch/XHR latency from the SDK's network capture. Performance
+ * entries (page loads, iframes, scripts) carry a duration too, but they are not
+ * responses, and the SDK drops the ones under 1s by default, so averaging them in
+ * made every project look several seconds slow.
+ */
+const RESPONSE_TIME = "$data.network.duration";
+const HAS_RESPONSE_TIME = {
+  "data.network.duration": { $type: "number" as const, $gte: 0 },
+};
+
 // Custom error classes for better error handling
 export class ProjectNotFoundError extends Error {
   constructor(id: string) {
@@ -95,6 +106,8 @@ export interface EnrichedProjectData {
   // Enhanced metrics
   metrics: {
     totalLogs: number;
+    /** Timestamp of the newest log, read from the logs themselves. */
+    lastActivity: string | null;
     totalErrorCount: number;
     errorRate: number;
     averageResponseTime: number;
@@ -138,19 +151,6 @@ export class ProjectService {
     }
   }
 
-  private static async updateLogCount(projectId: string): Promise<number> {
-    try {
-      const logCount = await LogModel.countDocuments({ projectId });
-      await ProjectModel.findByIdAndUpdate(projectId, {
-        logCount,
-        lastIngestedAt: new Date(),
-      });
-      return logCount;
-    } catch (error) {
-      throw new ProjectOperationError(`Failed to update log count: ${error}`);
-    }
-  }
-
   private static async recalculateProjectStats(projectId: string) {
     try {
       const [logCount, lastLog] = await Promise.all([
@@ -166,7 +166,9 @@ export class ProjectService {
         updateData.lastIngestedAt = new Date(lastLog.timestamp);
       }
 
-      await ProjectModel.findByIdAndUpdate(projectId, updateData);
+      await ProjectModel.findByIdAndUpdate(projectId, updateData, {
+        timestamps: false,
+      });
       return { logCount, lastIngestedAt: lastLog?.timestamp };
     } catch (error) {
       throw new ProjectOperationError(
@@ -358,10 +360,16 @@ export class ProjectService {
         performanceMetrics,
         trendMetrics,
       ] = await Promise.all([
-        // Total log counts
+        // Total log counts and newest log, straight from the logs collection
         LogModel.aggregate([
           { $match: { projectId: { $in: projectIds } } },
-          { $group: { _id: "$projectId", count: { $sum: 1 } } },
+          {
+            $group: {
+              _id: "$projectId",
+              count: { $sum: 1 },
+              lastLogAt: { $max: "$timestamp" },
+            },
+          },
         ]),
 
         // Error counts and rates
@@ -400,15 +408,12 @@ export class ProjectService {
             $match: {
               projectId: { $in: projectIds },
               timestamp: { $gte: metricsStartTime.toISOString() },
-              $or: [
-                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-              ],
+              ...HAS_RESPONSE_TIME,
             },
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             },
           },
           {
@@ -592,8 +597,8 @@ export class ProjectService {
       ]);
 
       // Create lookup maps for quick access
-      const logCountMap = new Map(
-        logCounts.map((item) => [item._id, item.count])
+      const logCountMap = new Map<string, { count: number; lastLogAt: string }>(
+        logCounts.map((item) => [item._id, item])
       );
       const errorCountMap = new Map(
         errorCounts.map((item) => [item._id, item])
@@ -756,7 +761,9 @@ export class ProjectService {
           return {
             ...project,
             metrics: {
-              totalLogs: logCountMap.get(projectId) || project.logCount || 0,
+              // The stored logCount drifts (retention deletes logs), so count live
+              totalLogs: logCountMap.get(projectId)?.count ?? 0,
+              lastActivity: logCountMap.get(projectId)?.lastLogAt ?? null,
               totalErrorCount: errorData.totalErrors,
               errorRate: Math.round(errorRate * 100) / 100,
               averageResponseTime: Math.round(
@@ -865,6 +872,7 @@ export class ProjectService {
       const now = new Date();
       const startTime = new Date(now.getTime() - timeRange * 60 * 60 * 1000);
       const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const volumeBucketMs = ProjectService.volumeBucketMs(timeRange);
 
       // Comprehensive analytics queries
       const [
@@ -892,9 +900,10 @@ export class ProjectService {
         
         // Trend analysis
         logTrends,
+        volumeRows,
         errorTrends,
         performanceTrends,
-        
+
         // Alert analysis
         alertAnalysis,
         
@@ -923,15 +932,12 @@ export class ProjectService {
             $match: {
               projectId: id,
               timestamp: { $gte: startTime.toISOString() },
-              $or: [
-                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-              ]
+              ...HAS_RESPONSE_TIME
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             }
           },
           {
@@ -951,15 +957,12 @@ export class ProjectService {
             $match: {
               projectId: id,
               timestamp: { $gte: startTime.toISOString() },
-              $or: [
-                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-              ]
+              ...HAS_RESPONSE_TIME
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             }
           },
           {
@@ -992,7 +995,7 @@ export class ProjectService {
               },
               count: { $sum: 1 },
               lastOccurrence: { $max: "$timestamp" },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
+              avgResponseTime: { $avg: RESPONSE_TIME }
             }
           },
           { $sort: { count: -1 } }
@@ -1039,9 +1042,9 @@ export class ProjectService {
               errorRequests: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
-              slowestRequests: { $max: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
-              fastestRequests: { $min: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
+              avgResponseTime: { $avg: RESPONSE_TIME },
+              slowestRequests: { $max: RESPONSE_TIME },
+              fastestRequests: { $min: RESPONSE_TIME }
             }
           }
         ]),
@@ -1064,7 +1067,7 @@ export class ProjectService {
               errorLogs: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
+              avgResponseTime: { $avg: RESPONSE_TIME }
             }
           },
           { $sort: { "_id.day": 1 } }
@@ -1086,7 +1089,7 @@ export class ProjectService {
                 dayOfWeek: { $dayOfWeek: { $toDate: "$timestamp" } }
               },
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              avgResponseTime: { $avg: RESPONSE_TIME },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               }
@@ -1108,7 +1111,7 @@ export class ProjectService {
             $group: {
               _id: "$service",
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              avgResponseTime: { $avg: RESPONSE_TIME },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
@@ -1131,7 +1134,7 @@ export class ProjectService {
             $group: {
               _id: "$environment",
               requestCount: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              avgResponseTime: { $avg: RESPONSE_TIME },
               errorCount: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               }
@@ -1158,10 +1161,33 @@ export class ProjectService {
               errorLogs: {
                 $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
               },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
+              avgResponseTime: { $avg: RESPONSE_TIME }
             }
           },
           { $sort: { "_id.date": 1 } }
+        ]),
+
+        // Log volume in fixed-width buckets sized to the range (5 min for 1h,
+        // 30 min for 24h, a day for 30d). Daily buckets left a 24h chart with
+        // one point. Zero-filled below.
+        LogModel.aggregate([
+          {
+            $match: {
+              projectId: id,
+              eventType: { $ne: "system" },
+              timestamp: { $gte: startTime.toISOString() }
+            }
+          },
+          { $addFields: { _ms: { $toLong: { $toDate: "$timestamp" } } } },
+          {
+            $group: {
+              _id: { $subtract: ["$_ms", { $mod: ["$_ms", volumeBucketMs] }] },
+              totalLogs: { $sum: 1 },
+              errorLogs: {
+                $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] }
+              }
+            }
+          }
         ]),
 
         // Error trends (daily) — honor the request's timeRange
@@ -1197,15 +1223,12 @@ export class ProjectService {
             $match: {
               projectId: id,
               timestamp: { $gte: startTime.toISOString() },
-              $or: [
-                { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-                { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-              ]
+              ...HAS_RESPONSE_TIME
             }
           },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             }
           },
           {
@@ -1259,7 +1282,7 @@ export class ProjectService {
                 hour: { $dateToString: { format: "%Y-%m-%dT%H:00:00Z", date: { $toDate: "$timestamp" } } }
               },
               logVolume: { $sum: 1 },
-              avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+              avgResponseTime: { $avg: RESPONSE_TIME },
               errorRate: {
                 $avg: {
                   $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0]
@@ -1286,7 +1309,7 @@ export class ProjectService {
                   },
                   totalActivity: { $sum: 1 },
                   uniqueServices: { $addToSet: "$service" },
-                  avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } }
+                  avgResponseTime: { $avg: RESPONSE_TIME }
                 }
               },
               {
@@ -1347,6 +1370,15 @@ export class ProjectService {
         },
         trends: {
           logs: logTrends,
+          volume: {
+            bucketMinutes: volumeBucketMs / 60000,
+            buckets: ProjectService.fillVolumeBuckets(
+              volumeRows,
+              startTime,
+              now,
+              volumeBucketMs
+            ),
+          },
           errors: errorTrends,
           performance: performanceTrends,
           analysis: ProjectService.analyzeTrends(logTrends, errorTrends, performanceTrends),
@@ -1618,7 +1650,10 @@ export class ProjectService {
         throw new ProjectNotFoundError(projectId);
       }
 
-      const actualCount = await this.updateLogCount(projectId);
+      // Sets lastIngestedAt from the newest log rather than "now", so a resync
+      // does not make idle projects look active
+      const { logCount: actualCount } =
+        await this.recalculateProjectStats(projectId);
 
       return {
         projectId,
@@ -3251,7 +3286,7 @@ export class ProjectService {
                   $sum: { $cond: [{ $in: ["$level", ["error", "fatal"]] }, 1, 0] },
                 },
                 avgResponseTime: {
-                  $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] },
+                  $avg: RESPONSE_TIME,
                 },
               },
             },
@@ -3293,15 +3328,12 @@ export class ProjectService {
               $match: {
                 projectId,
                 timestamp: { $gte: startTime.toISOString() },
-                $or: [
-                  { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-                  { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-                ],
+                ...HAS_RESPONSE_TIME,
               },
             },
             {
               $addFields: {
-                _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+                _latency: RESPONSE_TIME
               },
             },
             {
@@ -3638,10 +3670,7 @@ export class ProjectService {
           $gte: startDate.toISOString(),
           $lte: endDate.toISOString(),
         },
-        $or: [
-          { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-          { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-        ],
+        ...HAS_RESPONSE_TIME,
       };
 
       if (projectId) {
@@ -3671,7 +3700,7 @@ export class ProjectService {
           { $match: matchStage },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             },
           },
           {
@@ -3728,7 +3757,7 @@ export class ProjectService {
           { $match: matchStage },
           {
             $addFields: {
-              _latency: { $ifNull: ["$data.network.duration", "$data.performance.duration"] }
+              _latency: RESPONSE_TIME
             },
           },
           {
@@ -4572,16 +4601,13 @@ export class ProjectService {
           $match: {
             projectId,
             timestamp: { $gte: startTime.toISOString() },
-            $or: [
-              { "data.network.duration": { $exists: true, $type: "number", $gte: 0 } },
-              { "data.performance.duration": { $exists: true, $type: "number", $gte: 0 } }
-            ],
+            ...HAS_RESPONSE_TIME,
           },
         },
         {
           $group: {
             _id: null,
-            avgResponseTime: { $avg: { $ifNull: ["$data.network.duration", "$data.performance.duration"] } },
+            avgResponseTime: { $avg: RESPONSE_TIME },
           },
         },
       ]);
@@ -4655,6 +4681,40 @@ export class ProjectService {
     if (avgResponseTime < 1000) return "fair";
     if (avgResponseTime < 3000) return "poor";
     return "critical";
+  }
+
+  /** Smallest bucket width that keeps a range at 48 buckets or fewer. */
+  private static volumeBucketMs(rangeHours: number): number {
+    const widthsMinutes = [5, 15, 30, 60, 180, 360, 720];
+    const width =
+      widthsMinutes.find((m) => (rangeHours * 60) / m <= 48) ?? 1440;
+    return width * 60 * 1000;
+  }
+
+  /**
+   * Turns sparse aggregate rows (keyed by bucket start in epoch ms) into one
+   * entry per bucket across the whole window, so empty stretches plot as zero
+   * instead of being squeezed out of the chart.
+   */
+  private static fillVolumeBuckets(
+    rows: Array<{ _id: number; totalLogs: number; errorLogs: number }>,
+    start: Date,
+    end: Date,
+    bucketMs: number
+  ): Array<{ start: string; totalLogs: number; errorLogs: number }> {
+    const byStart = new Map(rows.map((row) => [Number(row._id), row]));
+    const first = Math.floor(start.getTime() / bucketMs) * bucketMs;
+    const last = Math.floor(end.getTime() / bucketMs) * bucketMs;
+    const buckets = [];
+    for (let t = first; t <= last; t += bucketMs) {
+      const row = byStart.get(t);
+      buckets.push({
+        start: new Date(t).toISOString(),
+        totalLogs: row?.totalLogs ?? 0,
+        errorLogs: row?.errorLogs ?? 0,
+      });
+    }
+    return buckets;
   }
 
   private static calculateErrorHealth(errorAnalysis: any[], totalLogs: number): string {

@@ -10,6 +10,7 @@ import {
   ExportLogsQueryDTO,
 } from "../dtos/savedSearch.dto";
 import { LogModel, ILog } from "../models/log.model"; // Import ILog for type safety
+import { ProjectModel } from "../models/project.model";
 import { Types, SortOrder } from "mongoose";
 import { globalServices } from "../server";
 import { AlertService } from "./alert.service";
@@ -87,8 +88,16 @@ export class LogService {
     } else if (filters.service) {
       query.service = filters.service;
     }
-    if (filters.environment) query.environment = filters.environment;
-    if (filters.eventType) query.eventType = filters.eventType;
+    if (filters.environments && filters.environments.length > 0) {
+      query.environment = { $in: filters.environments };
+    } else if (filters.environment) {
+      query.environment = filters.environment;
+    }
+    if (filters.eventTypes && filters.eventTypes.length > 0) {
+      query.eventType = { $in: filters.eventTypes };
+    } else if (filters.eventType) {
+      query.eventType = filters.eventType;
+    }
 
     // Use regex for partial matching on string fields like userAgent, url, referrer
     // All user inputs are escaped to prevent regex injection
@@ -132,14 +141,37 @@ export class LogService {
   }
 
   /**
+   * Bumps the project's stored log count and last-ingest time. Never throws:
+   * a stale counter must not fail ingestion.
+   */
+  private static async recordIngestion(projectId: string, count: number): Promise<void> {
+    if (count <= 0) return;
+    try {
+      // timestamps: false keeps updatedAt meaning "project settings changed"
+      await ProjectModel.updateOne(
+        { _id: projectId },
+        { $inc: { logCount: count }, $set: { lastIngestedAt: new Date() } },
+        { timestamps: false }
+      );
+    } catch (error) {
+      console.error("LogService: failed to update project ingest stats:", error);
+    }
+  }
+
+  /**
    * Creates a new log entry in the database.
    * @param data The data for the new log entry.
+   * @param options.recordIngestion Set false when the caller updates the
+   *   project's ingest stats itself (batchCreate does it once per batch).
    * @returns The created log document.
    * @throws LogValidationError if projectId is invalid.
    * @throws LogServiceError if creation fails. Identical logs are not
    *   deduplicated: the same message at the same timestamp is stored twice.
    */
-  static async createLog(data: CreateLogDTO): Promise<ILog> {
+  static async createLog(
+    data: CreateLogDTO,
+    options: { recordIngestion?: boolean } = {}
+  ): Promise<ILog> {
     const ingestionStartTime = new Date();
     try {
       this.validateObjectId(data.projectId); // Validate projectId
@@ -199,6 +231,10 @@ export class LogService {
       }
 
       const newLog = await LogModel.create(newLogData);
+
+      if (options.recordIngestion !== false) {
+        await this.recordIngestion(data.projectId, 1);
+      }
 
       // Fire-and-forget alert evaluation to not block ingestion
       AlertService.evaluateLogAndTrigger(newLog.toObject() as ILog).catch(() => {});
@@ -277,39 +313,7 @@ export class LogService {
         throw new LogValidationError("projectId is required to fetch logs.");
       }
 
-      const {
-        page = 1,
-        limit = 50,
-        sortBy = "timestamp",
-        sortOrder = "desc",
-      } = filters;
-
-      const query = this.buildLogQuery(filters);
-      const skip = (page - 1) * limit;
-      const sort: { [key: string]: SortOrder } = {
-        [sortBy]: sortOrder === "asc" ? 1 : -1,
-      };
-
-      const [logs, total] = await Promise.all([
-        LogModel.find(query)
-          .select("-__v") // Exclude Mongoose version key
-          .sort(sort)
-          .skip(skip)
-          .limit(limit)
-          .lean(), // Use lean() for read operations for better performance
-        LogModel.countDocuments(query), // Count based on the same query filters for accuracy
-      ]);
-
-      return {
-        logs,
-        pagination: {
-          total: Math.ceil(total / limit),
-          current: page,
-          count: logs.length,
-          order: sortOrder,
-          totalRecords: total,
-        },
-      };
+      return await this.findPage(this.buildLogQuery(filters), filters);
     } catch (error) {
       if (error instanceof LogValidationError) {
         throw error;
@@ -319,6 +323,89 @@ export class LogService {
         { filters, originalError: error }
       );
     }
+  }
+
+  /**
+   * Retrieves logs from every active project the user owns or is a team
+   * member of, newest first. Backs the global Log Explorer.
+   * @param userId The requesting user.
+   * @param filters The same filters as getAllLogs; filters.projectId is ignored.
+   * @param projectIds Optional subset to narrow to. IDs the user cannot access
+   *   are dropped silently rather than rejected.
+   * @throws LogValidationError if userId is invalid.
+   * @throws LogServiceError for other fetching failures.
+   */
+  static async getLogsAcrossProjects(
+    userId: string,
+    filters: FilterLogsDTO,
+    projectIds?: string[]
+  ) {
+    try {
+      this.validateObjectId(userId);
+      const userObjectId = new Types.ObjectId(userId);
+
+      const accessible = await ProjectModel.find({
+        isActive: true,
+        $or: [{ ownerId: userObjectId }, { "teamMembers.user": userObjectId }],
+      })
+        .select("_id")
+        .lean();
+
+      let ids = accessible.map((project) => project._id.toString());
+      if (projectIds && projectIds.length > 0) {
+        const wanted = new Set(projectIds);
+        ids = ids.filter((id) => wanted.has(id));
+      }
+
+      const query = this.buildLogQuery({ ...filters, projectId: undefined });
+      query.projectId = { $in: ids };
+
+      return await this.findPage(query, filters);
+    } catch (error) {
+      if (error instanceof LogValidationError) {
+        throw error;
+      }
+      throw new LogServiceError(
+        `Failed to fetch logs across projects: ${(error as Error).message}`,
+        { userId, filters, originalError: error }
+      );
+    }
+  }
+
+  /** Runs a log query with the pagination and sort options from filters. */
+  private static async findPage(query: any, filters: FilterLogsDTO) {
+    const {
+      page = 1,
+      limit = 50,
+      sortBy = "timestamp",
+      sortOrder = "desc",
+    } = filters;
+
+    const skip = (page - 1) * limit;
+    const sort: { [key: string]: SortOrder } = {
+      [sortBy]: sortOrder === "asc" ? 1 : -1,
+    };
+
+    const [logs, total] = await Promise.all([
+      LogModel.find(query)
+        .select("-__v") // Exclude Mongoose version key
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(), // Use lean() for read operations for better performance
+      LogModel.countDocuments(query), // Count based on the same query filters for accuracy
+    ]);
+
+    return {
+      logs,
+      pagination: {
+        total: Math.ceil(total / limit),
+        current: page,
+        count: logs.length,
+        order: sortOrder,
+        totalRecords: total,
+      },
+    };
   }
 
   /**
@@ -801,7 +888,9 @@ export class LogService {
             release: logEntry.release,
           };
 
-          const createdLog = await this.createLog(logData);
+          const createdLog = await this.createLog(logData, {
+            recordIngestion: false,
+          });
           successCount++;
           results.push({
             index: i,
@@ -817,6 +906,8 @@ export class LogService {
           });
         }
       }
+
+      await this.recordIngestion(projectId, successCount);
 
       return {
         success: successCount,

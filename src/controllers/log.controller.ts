@@ -76,6 +76,17 @@ export class LogController {
     } as ApiResponse);
   }
 
+  /** Reads a repeated (?a=x&a=y) or comma-separated (?a=x,y) query param. */
+  private static stringList(param: unknown): string[] | undefined {
+    const raw = Array.isArray(param) ? param : [param];
+    const values = raw
+      .filter((v): v is string => typeof v === "string")
+      .flatMap((v) => v.split(","))
+      .map((v) => v.trim())
+      .filter(Boolean);
+    return values.length > 0 ? values : undefined;
+  }
+
   // Updated to accept projectId as a parameter, as most log operations are project-scoped
   private static validatePaginationAndFilterParams(req: Request, projectId?: string): FilterLogsDTO {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -136,7 +147,9 @@ export class LogController {
       if (services.length === 0) services = undefined;
     }
     const environment = typeof req.query.environment === "string" ? req.query.environment : undefined;
+    const environments = LogController.stringList(req.query.environments);
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const release = typeof req.query.release === "string" ? req.query.release : undefined;
 
     const startDate =
       typeof req.query.startDate === "string"
@@ -149,6 +162,7 @@ export class LogController {
 
     // New fields from LogModel and FilterLogsDTO
     const eventType = typeof req.query.eventType === "string" ? req.query.eventType as FilterLogsDTO['eventType'] : undefined;
+    const eventTypes = LogController.stringList(req.query.eventTypes) as FilterLogsDTO['eventTypes'];
     const userAgent = typeof req.query.userAgent === "string" ? req.query.userAgent : undefined;
     const url = typeof req.query.url === "string" ? req.query.url : undefined;
     const referrer = typeof req.query.referrer === "string" ? req.query.referrer : undefined;
@@ -167,10 +181,13 @@ export class LogController {
       service,
       services,
       environment,
+      environments,
       search,
+      release,
       startDate,
       endDate,
       eventType,
+      eventTypes,
       userAgent,
       url,
       referrer,
@@ -225,6 +242,35 @@ export class LogController {
         meta: {
           pagination: result.pagination,
           filters: filters, // Include all applied filters in meta for clarity
+        },
+      } as ApiResponse);
+    } catch (error) {
+      return LogController.handleError(
+        error as Error,
+        res,
+        "Failed to fetch logs"
+      );
+    }
+  }
+
+  static async getLogsAcrossProjects(req: Request, res: Response): Promise<Response> {
+    try {
+      const filters = LogController.validatePaginationAndFilterParams(req);
+      const projectIds = LogController.stringList(req.query.projectIds);
+
+      const result = await LogService.getLogsAcrossProjects(
+        req.userId as string,
+        filters,
+        projectIds
+      );
+
+      return res.status(200).json({
+        status: "success",
+        message: "Logs fetched successfully",
+        data: result.logs,
+        meta: {
+          pagination: result.pagination,
+          filters,
         },
       } as ApiResponse);
     } catch (error) {

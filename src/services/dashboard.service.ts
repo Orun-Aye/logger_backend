@@ -445,33 +445,21 @@ export class DashboardService {
 
   private static async getResponseTimeStatistics(baseQuery: any) {
     try {
-      // Get response times from network events and performance events
+      // Response time is fetch/XHR latency only. Performance entries (page
+      // loads, iframes, scripts) are not responses, and the SDK only ships the
+      // slow ones, so including them inflated the average.
       const responseTimeResults = await LogModel.aggregate([
         {
           $match: {
             ...baseQuery,
-            $or: [
-              { eventType: 'network', 'data.network.duration': { $exists: true } },
-              { eventType: 'performance', 'data.performance.duration': { $exists: true } }
-            ]
+            eventType: 'network',
+            'data.network.duration': { $type: 'number', $gte: 0 }
           }
         },
         {
           $addFields: {
-            duration: {
-              $cond: {
-                if: { $eq: ['$eventType', 'network'] },
-                then: '$data.network.duration',
-                else: '$data.performance.duration'
-              }
-            },
-            url: {
-              $cond: {
-                if: { $eq: ['$eventType', 'network'] },
-                then: '$data.network.url',
-                else: '$url'
-              }
-            }
+            duration: '$data.network.duration',
+            url: '$data.network.url'
           }
         },
         {

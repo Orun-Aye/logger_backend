@@ -13,6 +13,18 @@ export enum LogLevel {
   FATAL = "fatal",
 }
 
+export type LogEventType =
+  | "error"
+  | "performance"
+  | "interaction"
+  | "network"
+  | "console"
+  | "pageview"
+  | "web-vital"
+  | "breadcrumb"
+  | "message"
+  | "system";
+
 /**
  * @description DTO for creating a new log entry
  */
@@ -34,17 +46,7 @@ export interface CreateLogDTO {
   environment?: string;
   context?: Record<string, any>;
   metadata?: any;
-  eventType?:
-    | "error"
-    | "performance"
-    | "interaction"
-    | "network"
-    | "console"
-    | "pageview"
-    | "web-vital"
-    | "breadcrumb"
-    | "message"
-    | "system";
+  eventType?: LogEventType;
   userAgent?: string;
   url?: string;
   referrer?: string;
@@ -66,20 +68,12 @@ export interface FilterLogsDTO {
   service?: string;
   services?: string[]; // Support multiple services
   environment?: string;
+  environments?: string[]; // Support multiple environments
   search?: string; // for message
   startDate?: Date;
   endDate?: Date;
-  eventType?:
-    | "error"
-    | "performance"
-    | "interaction"
-    | "network"
-    | "console"
-    | "pageview"
-    | "web-vital"
-    | "breadcrumb"
-    | "message"
-    | "system";
+  eventType?: LogEventType;
+  eventTypes?: LogEventType[]; // Support multiple event types
   userAgent?: string;
   url?: string;
   referrer?: string;

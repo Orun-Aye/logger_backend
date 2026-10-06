@@ -16,6 +16,9 @@ router.post('/:projectId/logs', authenticateApiKey, samplingMiddleware, LogContr
 
 // --- Log Management and Analytics (typically requires user authentication) ---
 
+// Logs from every project the user can access (global Log Explorer)
+router.get('/logs', verifyToken, LogController.getLogsAcrossProjects);
+
 // Get log summary for a project
 router.get('/:projectId/logs/summary', verifyToken, LogController.getLogsSummary);
 

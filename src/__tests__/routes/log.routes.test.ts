@@ -130,6 +130,52 @@ describe("Log Routes", () => {
   });
 
   // ----- GET /:projectId/logs (JWT Auth) -----
+  describe("GET /logs (all projects)", () => {
+    let secondProjectId: string;
+
+    beforeEach(async () => {
+      const second = await createTestProject(userId);
+      secondProjectId = second._id.toString();
+      const stranger = await createTestUser();
+      const foreign = await createTestProject(stranger._id as any);
+
+      await createTestLog(projectId, { message: "first project", environment: "production" });
+      await createTestLog(secondProjectId, { message: "second project", environment: "staging" });
+      await createTestLog(foreign._id.toString(), { message: "someone else's" });
+    });
+
+    it("should return logs from all of the user's projects", async () => {
+      const res = await request(app)
+        .get("/api/v1/logs")
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((l: any) => l.message).sort()).toEqual([
+        "first project",
+        "second project",
+      ]);
+      expect(res.body.meta.pagination.totalRecords).toBe(2);
+    });
+
+    it("should narrow with projectIds and environments", async () => {
+      const both = await request(app)
+        .get(`/api/v1/logs?projectIds=${projectId},${secondProjectId}&environments=staging`)
+        .set("Authorization", `Bearer ${authToken}`);
+      expect(both.body.data.map((l: any) => l.message)).toEqual(["second project"]);
+
+      const one = await request(app)
+        .get(`/api/v1/logs?projectIds=${projectId}`)
+        .set("Authorization", `Bearer ${authToken}`);
+      expect(one.body.data.map((l: any) => l.message)).toEqual(["first project"]);
+    });
+
+    it("should return 401 without JWT", async () => {
+      const res = await request(app).get("/api/v1/logs");
+
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe("GET /:projectId/logs", () => {
     beforeEach(async () => {
       await createTestLog(projectId, {
