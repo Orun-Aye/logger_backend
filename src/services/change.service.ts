@@ -14,6 +14,8 @@ import { AiBudgetService } from "./aiBudget.service";
 import { GithubAppService } from "./integrations/github-app.service";
 import {
   getCommitDetail,
+  listDeployments,
+  listDeploymentStatuses,
   listRecentCommits,
   listReleases,
 } from "./integrations/github-client";
@@ -278,6 +280,34 @@ export class ChangeService {
         await DeploymentService.upsertGithubReleases(projectId, releases);
       } catch (error) {
         logger.warn("ChangeService: release backfill failed", {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Import recent deployments. Webhooks normally deliver these; this
+      // recovers any that were missed or failed to store.
+      try {
+        const deployments = await listDeployments(
+          resolved.token,
+          link.owner,
+          link.repo
+        );
+        for (const deployment of deployments) {
+          const [latestStatus] = await listDeploymentStatuses(
+            resolved.token,
+            link.owner,
+            link.repo,
+            deployment.id
+          );
+          await DeploymentService.upsertGithubDeployment(
+            projectId,
+            deployment,
+            latestStatus
+          );
+        }
+      } catch (error) {
+        logger.warn("ChangeService: deployment backfill failed", {
           projectId,
           error: error instanceof Error ? error.message : String(error),
         });

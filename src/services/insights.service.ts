@@ -13,6 +13,7 @@ import {
   SeverityBreakdown,
   SummaryData,
   ErrorAnalysis,
+  PeriodComparison,
   FrequentErrorMessage,
   RecentActivity,
   RecentCriticalError,
@@ -28,9 +29,21 @@ import { LogLevel } from "../dtos/log.dto";
 let redisClient: RedisClientType | undefined;
 
 interface MatchStage {
-  projectId: Types.ObjectId;
-  timestamp: { $gte: Date; $lte: Date };
-  severity?: string;
+  projectId: string;
+  timestamp: { $gte: string; $lte: string };
+  level?: string;
+}
+
+/**
+ * Logs store projectId as a string and timestamp as an ISO string. Matching
+ * with an ObjectId or a Date compares different BSON types and finds nothing,
+ * which left every insight at zero.
+ */
+function logWindow(projectId: string, from: Date, to: Date): MatchStage {
+  return {
+    projectId,
+    timestamp: { $gte: from.toISOString(), $lte: to.toISOString() },
+  };
 }
 
 interface GroupStage {
@@ -139,6 +152,7 @@ export class DashboardInsightsService {
         endpointData,
         errorAnalysisData,
         recentActivityData,
+        volumeTrendsData,
       ] = await Promise.all([
         DashboardInsightsService.getSummaryData(projectId, dateRange, severity),
         DashboardInsightsService.getSeverityBreakdown(projectId, dateRange, severity),
@@ -146,6 +160,7 @@ export class DashboardInsightsService {
         DashboardInsightsService.getTopEndpoints(projectId, dateRange), // This is the function we're fixing
         DashboardInsightsService.getErrorAnalysis(projectId, dateRange),
         DashboardInsightsService.getRecentActivity(projectId),
+        DashboardInsightsService.getVolumeTrends(projectId, dateRange),
       ]);
 
       const insights: DashboardInsights = {
@@ -161,6 +176,7 @@ export class DashboardInsightsService {
         topEndpoints: endpointData,
         errorAnalysis: errorAnalysisData,
         recentActivity: recentActivityData,
+        volumeTrends: volumeTrendsData,
       };
 
       const endTime = process.hrtime.bigint();
@@ -201,12 +217,11 @@ export class DashboardInsightsService {
     severityFilter?: LogLevel
   ): Promise<SummaryData> {
     const matchStage: MatchStage = {
-      projectId: new mongoose.Types.ObjectId(projectId),
-      timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+      ...logWindow(projectId, dateRange.from, dateRange.to),
     };
 
     if (severityFilter) {
-      matchStage.severity = severityFilter;
+      matchStage.level = severityFilter;
     }
 
     const pipeline = [
@@ -264,12 +279,11 @@ export class DashboardInsightsService {
     severityFilter?: LogLevel
   ): Promise<SeverityBreakdown> {
     const matchStage: MatchStage = {
-      projectId: new mongoose.Types.ObjectId(projectId),
-      timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+      ...logWindow(projectId, dateRange.from, dateRange.to),
     };
 
     if (severityFilter) {
-      matchStage.severity = severityFilter;
+      matchStage.level = severityFilter;
     }
 
     const pipeline = [
@@ -305,12 +319,11 @@ export class DashboardInsightsService {
     timezone: string = "UTC"
   ): Promise<TimeSeriesDataPoint[]> {
     const matchStage: MatchStage = {
-      projectId: new mongoose.Types.ObjectId(projectId),
-      timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+      ...logWindow(projectId, dateRange.from, dateRange.to),
     };
 
     if (severityFilter) {
-      matchStage.severity = severityFilter;
+      matchStage.level = severityFilter;
     }
 
     const pipeline = [
@@ -321,7 +334,7 @@ export class DashboardInsightsService {
             date: {
               $dateToString: {
                 format: "%Y-%m-%d",
-                date: "$timestamp",
+                date: { $toDate: "$timestamp" },
                 timezone: timezone,
               },
             },
@@ -381,8 +394,7 @@ export class DashboardInsightsService {
     const pipeline = [
       {
         $match: {
-          projectId: new mongoose.Types.ObjectId(projectId),
-          timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+          ...logWindow(projectId, dateRange.from, dateRange.to),
           eventType: "network",
           "data.network.url": { $exists: true, $ne: null },
         },
@@ -465,8 +477,7 @@ export class DashboardInsightsService {
     const errorMessagesPipeline = [
       {
         $match: {
-          projectId: new mongoose.Types.ObjectId(projectId),
-          timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+          ...logWindow(projectId, dateRange.from, dateRange.to),
           level: { $in: [LogLevel.ERROR, LogLevel.FATAL] },
           message: { $exists: true, $ne: null },
         },
@@ -494,13 +505,11 @@ export class DashboardInsightsService {
       await Promise.all([
         LogModel.aggregate(errorMessagesPipeline),
         LogModel.countDocuments({
-          projectId: new mongoose.Types.ObjectId(projectId),
-          timestamp: { $gte: dateRange.from, $lte: dateRange.to },
+          ...logWindow(projectId, dateRange.from, dateRange.to),
           level: { $in: [LogLevel.ERROR, LogLevel.FATAL] },
         }),
         LogModel.countDocuments({
-          projectId: new mongoose.Types.ObjectId(projectId),
-          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd },
+          ...logWindow(projectId, previousPeriodStart, previousPeriodEnd),
           level: { $in: [LogLevel.ERROR, LogLevel.FATAL] },
         }),
       ]);
@@ -517,8 +526,8 @@ export class DashboardInsightsService {
         (error: any): FrequentErrorMessage => ({
           message: error._id,
           count: error.count,
-          firstSeen: error.firstSeen.toISOString(),
-          lastSeen: error.lastSeen.toISOString(),
+          firstSeen: new Date(error.firstSeen).toISOString(),
+          lastSeen: new Date(error.lastSeen).toISOString(),
           affectedEndpoints: error.affectedEndpoints.filter(
             (ep: string | null) => ep != null
           ),
@@ -532,10 +541,29 @@ export class DashboardInsightsService {
     };
   }
 
+  private static async getVolumeTrends(
+    projectId: string,
+    dateRange: DateRange
+  ): Promise<PeriodComparison> {
+    const periodLength = dateRange.to.getTime() - dateRange.from.getTime();
+    const previousStart = new Date(dateRange.from.getTime() - periodLength);
+    const [currentPeriod, previousPeriod] = await Promise.all([
+      LogModel.countDocuments(logWindow(projectId, dateRange.from, dateRange.to)),
+      LogModel.countDocuments(logWindow(projectId, previousStart, dateRange.from)),
+    ]);
+    const percentageChange =
+      previousPeriod > 0 ? ((currentPeriod - previousPeriod) / previousPeriod) * 100 : 0;
+    return {
+      currentPeriod,
+      previousPeriod,
+      percentageChange: Math.round(percentageChange * 10) / 10,
+    };
+  }
+
   private static async getRecentActivity(projectId: string): Promise<RecentActivity> {
     const [latestLog, recentCriticalErrors] = await Promise.all([
       LogModel.findOne({
-        projectId: new mongoose.Types.ObjectId(projectId),
+        projectId,
       })
         .sort({ timestamp: -1 })
         .lean(),
@@ -543,9 +571,9 @@ export class DashboardInsightsService {
       LogModel.aggregate([
         {
           $match: {
-            projectId: new mongoose.Types.ObjectId(projectId),
+            projectId,
             level: LogLevel.FATAL,
-            timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+            timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
           },
         },
         {
@@ -574,7 +602,7 @@ export class DashboardInsightsService {
         : null,
       recentCriticalErrors: recentCriticalErrors.map(
         (error: any): RecentCriticalError => ({
-          timestamp: error.latestTimestamp.toISOString(),
+          timestamp: new Date(error.latestTimestamp).toISOString(),
           message: error._id.message,
           endpoint: error._id.url,
           count: error.count,

@@ -77,7 +77,7 @@ export const ChangeController = {
     }
   },
 
-  /** POST /projects/:projectId/changes/backfill — manual re-import of recent commits. */
+  /** POST /projects/:projectId/changes/backfill — manual re-import of recent commits, releases and deployments. */
   async backfill(req: Request, res: Response) {
     const { projectId } = req.params;
     try {

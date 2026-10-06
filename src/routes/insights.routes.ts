@@ -7,35 +7,37 @@ const router = Router();
 
 router.use(verifyToken);
 
+// Mounted at /api/v1/insights, so paths here must not repeat "/insights"
+
 // Statistical insights (existing)
 router.get(
-  "/insights/:projectId",
+  "/:projectId",
   DashboardInsightsController.getProjectInsights
 );
 
 router.get(
-  "/insights/:projectId/invalidate",
+  "/:projectId/invalidate",
   DashboardInsightsController.invalidateProjectCache
 );
 
 // AI-powered insights (Phase 3)
 router.get(
-  "/insights/:projectId/root-cause/:errorId",
+  "/:projectId/root-cause/:errorId",
   AIInsightsController.getRootCause
 );
 
 router.post(
-  "/insights/:projectId/ask",
+  "/:projectId/ask",
   AIInsightsController.askQuestion
 );
 
 router.get(
-  "/insights/:projectId/suggestions",
+  "/:projectId/suggestions",
   AIInsightsController.getOptimizationSuggestions
 );
 
 router.get(
-  "/insights/:projectId/enriched",
+  "/:projectId/enriched",
   AIInsightsController.getEnrichedInsights
 );
 

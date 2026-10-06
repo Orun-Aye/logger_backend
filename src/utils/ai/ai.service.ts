@@ -14,6 +14,12 @@ const MAX_TOKENS_PER_HOUR = 50_000;
 const AI_EFFORT = "low" as const;
 
 /**
+ * The issue draft is requested while the user waits on an open dialog. Past
+ * this, the caller falls back to the deterministic template instead.
+ */
+const ISSUE_DRAFT_TIMEOUT_MS = 25_000;
+
+/**
  * AIService — Anthropic Claude-powered intelligence layer.
  *
  * All methods gracefully degrade when the API is unavailable,
@@ -464,7 +470,7 @@ export class AIService {
             content: JSON.stringify(errorContext, null, 2),
           },
         ],
-      });
+      }, { timeout: ISSUE_DRAFT_TIMEOUT_MS, maxRetries: 0 });
 
       const text = this.firstText(response.content);
       this.trackUsage(projectId, response.usage.input_tokens, response.usage.output_tokens);

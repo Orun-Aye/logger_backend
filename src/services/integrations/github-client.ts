@@ -313,6 +313,49 @@ export async function listReleases(
   );
 }
 
+export interface GithubDeployment {
+  id: number;
+  sha: string;
+  ref: string;
+  environment: string;
+  description: string | null;
+  created_at: string;
+  creator?: { login: string } | null;
+}
+
+export interface GithubDeploymentStatus {
+  state: string;
+  environment_url?: string;
+  created_at: string;
+}
+
+/** Most recent deployments first. */
+export async function listDeployments(
+  token: string,
+  owner: string,
+  repo: string,
+  perPage = 20,
+): Promise<GithubDeployment[]> {
+  return githubApiCall<GithubDeployment[]>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments?per_page=${perPage}`,
+  );
+}
+
+/** Statuses for one deployment, newest first. */
+export async function listDeploymentStatuses(
+  token: string,
+  owner: string,
+  repo: string,
+  deploymentId: number,
+  perPage = 1,
+): Promise<GithubDeploymentStatus[]> {
+  return githubApiCall<GithubDeploymentStatus[]>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses?per_page=${perPage}`,
+  );
+}
+
 /** List repositories accessible to an installation token. */
 export async function listInstallationRepos(
   installationToken: string,

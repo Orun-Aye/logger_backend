@@ -14,7 +14,11 @@ import {
 } from "../models/deployment.model";
 import { LogModel } from "../models/log.model";
 import { ErrorGroupModel } from "../models/errorGroup.model";
-import { GithubRelease } from "./integrations/github-client";
+import {
+  GithubDeployment,
+  GithubDeploymentStatus,
+  GithubRelease,
+} from "./integrations/github-client";
 import logger from "../utils/logger";
 
 const IMPACT_WINDOW_MINUTES = 60;
@@ -164,6 +168,24 @@ export class DeploymentService {
           });
         }
       }
+    }
+  }
+
+  /**
+   * Upsert a deployment fetched from the GitHub API (backfill). Goes through
+   * the webhook handlers so both paths store identical documents.
+   */
+  static async upsertGithubDeployment(
+    projectId: string,
+    deployment: GithubDeployment,
+    latestStatus?: GithubDeploymentStatus
+  ): Promise<void> {
+    await this.handleDeploymentEvent(projectId, { deployment });
+    if (latestStatus) {
+      await this.handleDeploymentStatusEvent(projectId, {
+        deployment,
+        deployment_status: latestStatus,
+      });
     }
   }
 

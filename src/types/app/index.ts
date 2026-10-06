@@ -82,6 +82,13 @@ export interface FrequentErrorMessage {
   affectedEndpoints: string[];
 }
 
+/** A count in the selected period vs the same-length period before it. */
+export interface PeriodComparison {
+  currentPeriod: number;
+  previousPeriod: number;
+  percentageChange: number; // 0 when the previous period had none
+}
+
 /**
  * Data for error trends (current vs previous period).
  */
@@ -148,6 +155,8 @@ export interface DashboardInsights {
   timeSeriesData: TimeSeriesDataPoint[];
   topEndpoints: EndpointData[];
   errorAnalysis: ErrorAnalysis;
+  /** All logs, current vs previous period. */
+  volumeTrends: PeriodComparison;
   recentActivity: RecentActivity;
   meta?: InsightsMeta;
 }

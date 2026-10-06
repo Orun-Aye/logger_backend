@@ -10,6 +10,9 @@ process.env.MONGODB_URI = "mongodb://mongodb-memory-server.invalid/apperio_test"
 process.env.PORT = "5555";
 process.env.NODE_ENV = "test";
 process.env.REDIS_ENABLED = "false";
+// dotenv never overrides a set variable, so this keeps a developer's .env
+// from turning tests into real, billed Anthropic API calls
+process.env.ANTHROPIC_ENABLED = "false";
 
 // First boot on a machine downloads the mongod binary (version pinned in
 // package.json "config.mongodbMemoryServer"), which can exceed testTimeout.

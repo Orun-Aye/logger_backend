@@ -69,6 +69,7 @@ import { DashboardWebSocketService } from "./services/websocket.service";
 import { initializeRedis } from "./utils/db";
 import { initializeJobs } from "./jobs";
 import { ChangelogService } from "./services/changelog.service";
+import { repairDeploymentIndexes } from "./models/deployment.model";
 
 // Initialize configuration (validates environment variables)
 initializeConfig();
@@ -597,6 +598,18 @@ app.use(errorHandlerMiddleware);
 
       // Seed changelog entries if empty
       await ChangelogService.seedIfEmpty();
+
+      // Replace the deployment indexes that blocked every deploy after the first
+      try {
+        const dropped = await repairDeploymentIndexes();
+        if (dropped.length > 0) {
+          logger.info("Deployment indexes repaired", { dropped });
+        }
+      } catch (error) {
+        logger.error("Deployment index repair failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       // Initialize Redis
       await initializeRedis();

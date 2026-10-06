@@ -10,6 +10,7 @@ import changeRoutes from "../routes/change.routes";
 import replayRoutes from "../routes/replay.routes";
 import sdkConfigRoutes from "../routes/sdk-config.routes";
 import sdkConfigPublicRoutes from "../routes/sdk-config-public.routes";
+import insightsRoutes from "../routes/insights.routes";
 
 const app = express();
 
@@ -22,5 +23,6 @@ app.use("/api/v1", changeRoutes);
 app.use("/api/v1", replayRoutes);
 app.use("/api/v1/projects", sdkConfigRoutes);
 app.use("/api/v1/sdk-config", sdkConfigPublicRoutes);
+app.use("/api/v1/insights", insightsRoutes);
 
 export default app;

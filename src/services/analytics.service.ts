@@ -1,6 +1,9 @@
 // src/services/analytics.service.ts
+import { Types } from "mongoose";
 import { LogModel } from "../models/log.model";
+import { ReplaySegmentModel } from "../models/replayEvent.model";
 import { LogLevel } from "../dtos/log.dto";
+import { parseUserAgent } from "../utils/user-agent";
 
 /**
  * Session ID resolution.
@@ -1062,6 +1065,8 @@ export class AnalyticsService {
           ...HAS_SESSION_ID,
         },
       },
+      // Chronological, so $first/$last below mean entry and exit
+      { $sort: { timestamp: 1 } },
       {
         $group: {
           _id: SESSION_ID_EXPR,
@@ -1077,27 +1082,25 @@ export class AnalyticsService {
           },
           device: { $first: "$context.device" },
           browser: { $first: "$context.browser" },
+          userAgent: { $first: "$userAgent" },
           country: { $first: "$context.country" },
           entryPage: { $first: "$url" },
           exitPage: { $last: "$url" },
-        },
-      },
-      {
-        $addFields: {
-          duration: {
-            $divide: [
-              {
-                $subtract: [{ $toDate: "$endTime" }, { $toDate: "$startTime" }],
-              },
-              1000,
-            ],
-          },
         },
       },
       { $sort: { startTime: -1 } },
       { $skip: (options.page - 1) * options.limit },
       { $limit: options.limit },
     ]);
+
+    const replayBounds = await this.getReplayBounds(
+      projectId,
+      sessions.map((s) => s._id)
+    );
+    const described = sessions.map((session) => ({
+      ...session,
+      ...this.describeSession(session, replayBounds.get(session._id)),
+    }));
 
     const totalAgg = await LogModel.aggregate([
       {
@@ -1116,13 +1119,71 @@ export class AnalyticsService {
     const total = totalAgg[0]?.total ?? 0;
 
     return {
-      sessions,
+      sessions: described,
       pagination: {
         current: options.page,
         total: Math.ceil(total / options.limit),
         count: sessions.length,
         totalRecords: total,
       },
+    };
+  }
+
+  /** First and last replay event timestamps (epoch ms) per session. */
+  private static async getReplayBounds(
+    projectId: string,
+    sessionIds: string[]
+  ): Promise<Map<string, { start: number; end: number }>> {
+    if (sessionIds.length === 0 || !Types.ObjectId.isValid(projectId)) {
+      return new Map();
+    }
+    const rows = await ReplaySegmentModel.aggregate([
+      {
+        $match: {
+          projectId: new Types.ObjectId(projectId),
+          sessionId: { $in: sessionIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$sessionId",
+          start: { $min: "$startTimestamp" },
+          end: { $max: "$endTimestamp" },
+        },
+      },
+    ]);
+    return new Map(rows.map((r) => [r._id as string, { start: r.start, end: r.end }]));
+  }
+
+  /**
+   * Timing and device for one session. A session's logs can sit milliseconds
+   * apart (a page view and a load event) while the visitor stays for a minute,
+   * so a recorded replay widens the window. Duration is in milliseconds.
+   */
+  private static describeSession(
+    session: {
+      startTime: string | Date;
+      endTime: string | Date;
+      userAgent?: string;
+      device?: string;
+      browser?: string;
+    },
+    replay?: { start: number; end: number }
+  ) {
+    const logStart = new Date(session.startTime).getTime();
+    const logEnd = new Date(session.endTime).getTime();
+    const start = replay ? Math.min(logStart, replay.start) : logStart;
+    const end = replay ? Math.max(logEnd, replay.end) : logEnd;
+    const agent = parseUserAgent(session.userAgent);
+    return {
+      startTime: new Date(start).toISOString(),
+      endTime: new Date(end).toISOString(),
+      duration: end - start,
+      // The SDK sends no device field; derive it from the User-Agent
+      device: session.device || agent.device,
+      browser: session.browser || agent.browser,
+      os: agent.os,
+      hasReplay: Boolean(replay),
     };
   }
 
@@ -1138,21 +1199,24 @@ export class AnalyticsService {
       return null;
     }
 
-    const startTime = new Date(logs[0].timestamp);
-    const endTime = new Date(logs[logs.length - 1].timestamp);
-    const duration = (endTime.getTime() - startTime.getTime()) / 1000;
+    const replayBounds = await this.getReplayBounds(projectId, [sessionId]);
 
     return {
       sessionId,
       userId: logs[0].context?.userId,
-      startTime,
-      endTime,
-      duration,
+      ...this.describeSession(
+        {
+          startTime: logs[0].timestamp,
+          endTime: logs[logs.length - 1].timestamp,
+          userAgent: logs[0].userAgent,
+          device: logs[0].context?.device,
+          browser: logs[0].context?.browser,
+        },
+        replayBounds.get(sessionId)
+      ),
       pageViews: logs.filter((l) => l.eventType === "pageview").length,
       events: logs.length,
       hasErrors: logs.some((l) => ["error", "fatal"].includes(l.level)),
-      device: logs[0].context?.device,
-      browser: logs[0].context?.browser,
       country: logs[0].context?.country,
       entryPage: logs[0].url,
       exitPage: logs[logs.length - 1].url,
@@ -1184,6 +1248,9 @@ export class AnalyticsService {
     options: { timeRange: string }
   ) {
     const { startDate, endDate } = this.parseTimeRange(options.timeRange);
+    const projectObjectId = Types.ObjectId.isValid(projectId)
+      ? new Types.ObjectId(projectId)
+      : null;
 
     const stats = await LogModel.aggregate([
       {
@@ -1209,10 +1276,48 @@ export class AnalyticsService {
           },
         },
       },
+      // Widen each session to its replay span, as describeSession does
+      {
+        $lookup: {
+          from: ReplaySegmentModel.collection.name,
+          let: { sid: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$projectId", projectObjectId] },
+                    { $eq: ["$sessionId", "$$sid"] },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                start: { $min: "$startTimestamp" },
+                end: { $max: "$endTimestamp" },
+              },
+            },
+          ],
+          as: "replay",
+        },
+      },
       {
         $addFields: {
+          replay: { $arrayElemAt: ["$replay", 0] },
+          logStartMs: { $toLong: "$startTime" },
+          logEndMs: { $toLong: "$endTime" },
+        },
+      },
+      {
+        $addFields: {
+          // Milliseconds, matching getSessions
           duration: {
-            $divide: [{ $subtract: ["$endTime", "$startTime"] }, 1000],
+            $subtract: [
+              { $max: ["$logEndMs", { $ifNull: ["$replay.end", "$logEndMs"] }] },
+              { $min: ["$logStartMs", { $ifNull: ["$replay.start", "$logStartMs"] }] },
+            ],
           },
         },
       },
