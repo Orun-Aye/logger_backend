@@ -3,6 +3,7 @@ import { WaitlistModel, WaitlistStatus } from "../models/waitlist.model";
 import { verifyToken } from "../middleware/auth.middleware";
 import { requireAdmin } from "../middleware/adminAuth.middleware";
 import { NotificationService } from "../services/notification.service";
+import logger from "../utils/logger";
 import crypto from "crypto";
 
 const router = Router();
@@ -89,14 +90,21 @@ router.post("/", async (req: Request, res: Response) => {
       const existing = await WaitlistModel.findOne({
         email: req.body.email?.toLowerCase?.()?.trim?.(),
       });
-      return res.status(200).json({
-        status: "success",
-        message: "You're already on the waitlist!",
-        position: existing?.position || 0,
-        referralCode: existing?.referralCode || "",
-      });
+      // Only a genuine same-email race is "already on the list". Any other
+      // duplicate key means the entry was not saved, so say so.
+      if (existing) {
+        return res.status(200).json({
+          status: "success",
+          message: "You're already on the waitlist!",
+          position: existing.position,
+          referralCode: existing.referralCode,
+        });
+      }
     }
 
+    logger.error("Waitlist signup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return res.status(500).json({
       status: "error",
       message: "Failed to join waitlist. Please try again.",

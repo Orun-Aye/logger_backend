@@ -7,7 +7,7 @@ export interface IWaitlistEntry extends Document {
   position: number;
   referralCode: string;
   status: WaitlistStatus;
-  inviteCode: string | null;
+  inviteCode?: string | null;
   approvedAt: Date | null;
   invitedAt: Date | null;
   signedUpAt: Date | null;
@@ -29,7 +29,10 @@ const WaitlistSchema: Schema<IWaitlistEntry> = new Schema({
     enum: ["pending", "approved", "rejected"],
     default: "pending",
   },
-  inviteCode: { type: String, default: null, unique: true, sparse: true },
+  // No default on purpose: the field must stay absent until approval. A sparse
+  // index skips missing fields but still indexes explicit nulls, so a null
+  // default made every pending entry after the first a duplicate key.
+  inviteCode: { type: String, unique: true, sparse: true },
   approvedAt: { type: Date, default: null },
   invitedAt: { type: Date, default: null },
   signedUpAt: { type: Date, default: null },
