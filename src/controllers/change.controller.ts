@@ -165,6 +165,10 @@ export const ChangeController = {
    */
   async recordDeployment(req: Request, res: Response) {
     const { projectId } = req.params;
+    // The API key identifies one project; it may only record deploys for that one
+    if (req.projectId !== projectId) {
+      return fail(res, 403, "API key does not belong to this project");
+    }
     try {
       const deployment = await DeploymentService.recordApiDeployment(
         projectId,

@@ -13,8 +13,11 @@ import { authorizeProjectAccess } from "../middleware/authorizeProjectAccess";
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(verifyToken);
+// All saved-search routes require a JWT. Scoped to this path on purpose: the
+// router is mounted on /api/v1/projects ahead of other routers, so a bare
+// router.use(verifyToken) also rejected API-key routes such as the CI
+// deployments endpoint before they could be reached.
+router.use("/:projectId/saved-searches", verifyToken);
 
 // Note: Project authorization is handled by authorizeProjectAccess middleware
 
