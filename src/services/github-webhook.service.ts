@@ -96,6 +96,17 @@ export class GithubWebhookService {
         }
 
         for (const project of projects) {
+          // Deployments cover every branch; a project only wants its own
+          if (
+            (event === "deployment" || event === "deployment_status") &&
+            !(await DeploymentService.belongsToTrackedBranch(
+              project.projectId,
+              project.branch,
+              payload?.deployment
+            ))
+          ) {
+            continue;
+          }
           if (event === "deployment") {
             await DeploymentService.handleDeploymentEvent(
               project.projectId,

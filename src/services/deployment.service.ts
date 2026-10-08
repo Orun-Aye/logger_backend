@@ -14,6 +14,7 @@ import {
 } from "../models/deployment.model";
 import { LogModel } from "../models/log.model";
 import { ErrorGroupModel } from "../models/errorGroup.model";
+import { CommitModel } from "../models/commit.model";
 import {
   GithubDeployment,
   GithubDeploymentStatus,
@@ -33,6 +34,26 @@ export class DeploymentService {
   // ------------------------------------------------------------------
   // Webhook ingestion
   // ------------------------------------------------------------------
+
+  /**
+   * Whether a GitHub deployment belongs to the branch a project tracks. A
+   * repo's deployments cover every branch (previews, other environments), so
+   * a project linked to one branch must skip the rest. GitHub's ref is a
+   * branch name or a commit SHA; a SHA counts only if it is a commit already
+   * stored from the tracked branch.
+   */
+  static async belongsToTrackedBranch(
+    projectId: string,
+    branch: string | undefined,
+    deployment: { ref?: string; sha?: string } | undefined
+  ): Promise<boolean> {
+    const ref = deployment?.ref?.replace(/^refs\/heads\//, "");
+    if (!ref || !branch) return true;
+    if (/^[0-9a-f]{40}$/i.test(ref)) {
+      return !!(await CommitModel.exists({ projectId, sha: ref }));
+    }
+    return ref === branch;
+  }
 
   static async handleDeploymentEvent(
     projectId: string,

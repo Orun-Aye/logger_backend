@@ -294,6 +294,16 @@ export class ChangeService {
           link.repo
         );
         for (const deployment of deployments) {
+          // The repo's deployments cover every branch; keep the linked one's
+          if (
+            !(await DeploymentService.belongsToTrackedBranch(
+              projectId,
+              link.branch || "main",
+              deployment
+            ))
+          ) {
+            continue;
+          }
           const [latestStatus] = await listDeploymentStatuses(
             resolved.token,
             link.owner,
