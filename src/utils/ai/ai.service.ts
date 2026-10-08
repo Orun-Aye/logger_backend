@@ -132,10 +132,34 @@ export class AIService {
    */
   static async analyzeErrorGroup(
     errorMessages: string[],
-    context: { projectId: string; service?: string; environment?: string }
+    context: {
+      projectId: string;
+      service?: string;
+      environment?: string;
+      /** Stack trace of the occurrence being analyzed */
+      stack?: string;
+      /** Page or endpoint it happened on */
+      url?: string;
+      release?: string;
+      /** How many times it happened in the window the messages come from */
+      occurrences?: number;
+    }
   ): Promise<string | null> {
     const client = this.getClient();
     if (!client || !this.checkRateLimit(context.projectId)) return null;
+
+    const lines = [
+      `Error from ${context.service || "the application"} (${context.environment || "unknown"} environment).`,
+      context.release ? `Release: ${context.release}` : null,
+      context.url ? `Page: ${context.url}` : null,
+      context.occurrences ? `Occurrences in the last 24 hours: ${context.occurrences}` : null,
+      "",
+      "Error messages:",
+      ...errorMessages.slice(0, 20),
+      ...(context.stack
+        ? ["", "Stack trace of the newest occurrence:", context.stack.slice(0, 4000)]
+        : []),
+    ].filter((line): line is string => line !== null);
 
     try {
       const response = await client.messages.create({
@@ -144,15 +168,12 @@ export class AIService {
         output_config: { effort: AI_EFFORT },
         system:
           "You are an expert software engineer specializing in debugging and root cause analysis. " +
-          "Analyze the error messages and provide a concise root cause analysis. " +
-          "Be specific about what's likely going wrong and suggest fixes. " +
-          "Format your response in plain text, keeping it under 300 words.",
-        messages: [
-          {
-            role: "user",
-            content: `Analyze these ${errorMessages.length} error messages from ${context.service || "the application"} (${context.environment || "unknown"} environment):\n\n${errorMessages.slice(0, 20).join("\n\n")}`,
-          },
-        ],
+          "Analyze the error and give a concise root cause analysis. When a stack trace is given, " +
+          "ground the analysis in it: name the function, file and line that fail and explain why. " +
+          "Be specific about what's likely going wrong and suggest a fix. " +
+          "Answer in plain text: no markdown, no asterisks, no headings, no bullet symbols. " +
+          "Keep it under 250 words.",
+        messages: [{ role: "user", content: lines.join("\n") }],
       });
 
       const text = this.firstText(response.content);

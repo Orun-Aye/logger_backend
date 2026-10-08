@@ -47,15 +47,27 @@ export class AIInsightsService {
       .limit(20)
       .lean();
 
-    const errorMessages = similarErrors.map(
-      (e) => `[${e.service || "unknown"}] ${e.error?.name || ""}: ${e.error?.message || e.message}`
+    // Distinct messages with a count: twenty copies of one line tell the model
+    // no more than one line and how often it happened
+    const messageCounts = new Map<string, number>();
+    for (const e of similarErrors) {
+      const line = `[${e.service || "unknown"}] ${e.error?.name || ""}: ${e.error?.message || e.message}`;
+      messageCounts.set(line, (messageCounts.get(line) ?? 0) + 1);
+    }
+    const errorMessages = [...messageCounts].map(([line, count]) =>
+      count > 1 ? `${line} (${count} times)` : line
     );
 
-    // Try AI analysis first
+    // Try AI analysis first, with the stack, page and release of this
+    // occurrence: without them the model can only guess from the message
     const aiAnalysis = await AIService.analyzeErrorGroup(errorMessages, {
       projectId,
       service: errorLog.service,
       environment: errorLog.environment,
+      stack: errorLog.error?.stack,
+      url: errorLog.url || errorLog.error?.url,
+      release: errorLog.release,
+      occurrences: similarErrors.length,
     });
 
     if (aiAnalysis) {
