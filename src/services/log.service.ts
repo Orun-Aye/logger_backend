@@ -18,6 +18,40 @@ import { FingerprintService } from "./fingerprint.service";
 import { ErrorGroupService } from "./errorGroup.service";
 import { Readable } from "stream";
 
+const LEGACY_CAPTURE_MESSAGES = new Set(["Uncaught Error", "Unhandled Promise Rejection"]);
+
+/**
+ * apperio SDK <= 1.5.0 logged every uncaught error as "Uncaught Error" (and
+ * every rejection as "Unhandled Promise Rejection") with no top-level error,
+ * keeping the real details in data.error. For uncaught errors that was the
+ * browser's ErrorEvent: name "ErrorEvent", message "Uncaught TypeError: ...".
+ * Grouping on the top-level message merged every such error into one group,
+ * so recover the real type, message and location here. Sites keep sending
+ * this shape until they upgrade to 1.5.1.
+ */
+export function recoverLegacyCapturedError(data: any): ILog["error"] | undefined {
+  if (data?.error || !LEGACY_CAPTURE_MESSAGES.has(data?.message)) return undefined;
+  const detail = data?.data?.error;
+  if (!detail || typeof detail.message !== "string" || !detail.message) return undefined;
+
+  let name: string = detail.name || "Error";
+  let message: string = detail.message;
+  if (name === "ErrorEvent") {
+    const typed = /^(?:Uncaught\s+)?([A-Z][A-Za-z]*(?:Error|Exception)):\s*([\s\S]*)$/.exec(message);
+    name = typed ? typed[1] : "Error";
+    message = typed ? typed[2] : message.replace(/^Uncaught\s+/, "");
+  }
+
+  return {
+    name,
+    message,
+    ...(typeof detail.stack === "string" && detail.stack ? { stack: detail.stack } : {}),
+    ...(detail.url ? { url: detail.url } : {}),
+    ...(typeof detail.lineNumber === "number" ? { lineNumber: detail.lineNumber } : {}),
+    ...(typeof detail.columnNumber === "number" ? { columnNumber: detail.columnNumber } : {}),
+  };
+}
+
 // Custom error classes for better error handling
 export class LogNotFoundError extends Error {
   constructor(id: string) {
@@ -217,6 +251,12 @@ export class LogService {
         ingestionSuccess: true,
       };
 
+      // apperio <= 1.5.0 auto-captured errors arrive without a top-level error
+      if (!newLogData.error) {
+        const recovered = recoverLegacyCapturedError(data);
+        if (recovered) newLogData.error = recovered;
+      }
+
       // Phase 7: fingerprint error events so they can be grouped
       const isErrorEvent =
         data.level === "error" ||
@@ -224,9 +264,9 @@ export class LogService {
         data.eventType === "error";
       if (isErrorEvent && data.eventType !== "system") {
         newLogData.fingerprint = FingerprintService.compute({
-          errorName: data.error?.name,
-          message: data.error?.message || data.message,
-          stack: data.error?.stack,
+          errorName: newLogData.error?.name,
+          message: newLogData.error?.message || data.message,
+          stack: newLogData.error?.stack,
         });
       }
 

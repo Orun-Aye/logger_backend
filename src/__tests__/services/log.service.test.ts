@@ -117,6 +117,79 @@ describe("LogService", () => {
       expect(after!.lastIngestedAt).toBeInstanceOf(Date);
       expect(after!.updatedAt.getTime()).toBe(before!.updatedAt.getTime());
     });
+
+    // apperio <= 1.5.0 sent every uncaught error as "Uncaught Error" with the
+    // real details only inside data.error, which merged all of them into one group
+    describe("errors from apperio 1.5.0 and earlier", () => {
+      const legacyUncaught = (message: string, file: string) => ({
+        projectId,
+        level: LogLevel.ERROR,
+        message: "Uncaught Error",
+        eventType: "error",
+        data: {
+          eventType: "error",
+          error: { name: "ErrorEvent", message, url: file, lineNumber: 25, columnNumber: 25 },
+        },
+      });
+
+      it("recovers the real error type, message and location", async () => {
+        const result = await LogService.createLog(
+          legacyUncaught(
+            "Uncaught TypeError: Cannot read properties of undefined (reading 'email')",
+            "https://shop.example/js/checkout.js"
+          ) as any
+        );
+
+        expect(result.error).toEqual(
+          expect.objectContaining({
+            name: "TypeError",
+            message: "Cannot read properties of undefined (reading 'email')",
+            url: "https://shop.example/js/checkout.js",
+            lineNumber: 25,
+          })
+        );
+      });
+
+      it("gives different uncaught errors different fingerprints", async () => {
+        const a = await LogService.createLog(
+          legacyUncaught("Uncaught TypeError: x is undefined", "https://a.example/a.js") as any
+        );
+        const b = await LogService.createLog(
+          legacyUncaught("Uncaught RangeError: Invalid array length", "https://a.example/b.js") as any
+        );
+
+        expect((a as any).fingerprint).toBeDefined();
+        expect((a as any).fingerprint).not.toBe((b as any).fingerprint);
+      });
+
+      it("uses the rejection's own error for unhandled rejections", async () => {
+        const result = await LogService.createLog({
+          projectId,
+          level: LogLevel.ERROR,
+          message: "Unhandled Promise Rejection",
+          eventType: "error",
+          data: {
+            error: { name: "Error", message: "Payment provider unavailable", stack: "Error: Payment provider unavailable\n    at pay (pay.js:3:9)" },
+          },
+        } as any);
+
+        expect(result.error).toEqual(
+          expect.objectContaining({ name: "Error", message: "Payment provider unavailable" })
+        );
+      });
+
+      it("leaves a log that already carries an error untouched", async () => {
+        const result = await LogService.createLog({
+          projectId,
+          level: LogLevel.ERROR,
+          message: "Uncaught Error",
+          error: { name: "SyntaxError", message: "Unexpected token" },
+          data: { error: { name: "ErrorEvent", message: "Uncaught TypeError: other" } },
+        } as any);
+
+        expect(result.error).toEqual(expect.objectContaining({ name: "SyntaxError" }));
+      });
+    });
   });
 
   // ----- batchCreate -----
