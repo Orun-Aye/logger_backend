@@ -4,6 +4,7 @@ import {
   DeploymentModel,
   repairDeploymentIndexes,
 } from "../../models/deployment.model";
+import { LogModel } from "../../models/log.model";
 
 const deploymentPayload = (id: number, sha = `sha${id}`) => ({
   deployment: {
@@ -92,6 +93,66 @@ describe("DeploymentService", () => {
 
     it("should do nothing once repaired", async () => {
       expect(await repairDeploymentIndexes()).toEqual([]);
+    });
+  });
+
+  describe("computeImpact", () => {
+    const HOUR = 60 * 60 * 1000;
+    const startedAt = new Date(Date.now() - 2 * HOUR);
+
+    // Raw inserts so createdAt can sit before or after the deploy
+    const logs = (count: number, level: string, offsetMs: number) =>
+      LogModel.collection.insertMany(
+        Array.from({ length: count }, (_, i) => ({
+          projectId,
+          level,
+          message: `${level} ${i}`,
+          timestamp: new Date(startedAt.getTime() + offsetMs).toISOString(),
+          createdAt: new Date(startedAt.getTime() + offsetMs + i * 1000),
+        }))
+      );
+
+    const deploy = () =>
+      DeploymentModel.create({
+        projectId,
+        kind: "deployment",
+        provider: "api",
+        environment: "production",
+        status: "success",
+        startedAt,
+      });
+
+    it("says not enough traffic when nothing was seen before the deploy", async () => {
+      // A brand-new project: errors right after its first deploy say nothing
+      // about whether the deploy made things worse
+      await logs(3, "info", 10 * 60 * 1000);
+      await logs(6, "error", 20 * 60 * 1000);
+      const dep = await deploy();
+
+      await DeploymentService.computeImpact(dep);
+
+      expect(dep.impact?.verdict).toBe("unknown");
+    });
+
+    it("still flags a clear error burst after a quiet, low-traffic hour", async () => {
+      await logs(4, "info", -30 * 60 * 1000);
+      await logs(6, "error", 20 * 60 * 1000);
+      const dep = await deploy();
+
+      await DeploymentService.computeImpact(dep);
+
+      expect(dep.impact?.verdict).toBe("degraded");
+    });
+
+    it("compares error rates when both hours have enough traffic", async () => {
+      await logs(40, "info", -30 * 60 * 1000);
+      await logs(10, "error", -20 * 60 * 1000);
+      await logs(50, "info", 20 * 60 * 1000);
+      const dep = await deploy();
+
+      await DeploymentService.computeImpact(dep);
+
+      expect(dep.impact?.verdict).toBe("improved");
     });
   });
 });

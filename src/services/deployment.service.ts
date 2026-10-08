@@ -387,8 +387,14 @@ export class DeploymentService {
       } else {
         verdict = "healthy";
       }
-    } else if (before.errorCount === 0 && after.errorCount >= 5) {
-      // Low traffic but a clear new error burst
+    } else if (
+      before.logCount > 0 &&
+      before.errorCount === 0 &&
+      after.errorCount >= 5
+    ) {
+      // Low traffic but a clear new error burst. Needs some traffic before the
+      // deploy: with none (a new project's first deploy) there is no baseline,
+      // so errors afterwards say nothing about the deploy and stay "unknown".
       verdict = "degraded";
     }
 
