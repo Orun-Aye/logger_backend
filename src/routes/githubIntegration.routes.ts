@@ -1,5 +1,9 @@
 import { Router } from "express";
 import { verifyToken, optionalAuth } from "../middleware/auth.middleware";
+import {
+  authorizeProjectAccess,
+  requireProjectAdmin,
+} from "../middleware/authorizeProjectAccess";
 import { GithubIntegrationController } from "../controllers/githubIntegration.controller";
 
 const router = Router();
@@ -66,18 +70,21 @@ router.get(
 router.post(
   "/projects/:projectId/github-link",
   verifyToken,
+  requireProjectAdmin,
   GithubIntegrationController.linkRepo,
 );
 
 router.delete(
   "/projects/:projectId/github-link",
   verifyToken,
+  requireProjectAdmin,
   GithubIntegrationController.unlinkRepo,
 );
 
 router.get(
   "/projects/:projectId/recent-commits",
   verifyToken,
+  authorizeProjectAccess,
   GithubIntegrationController.getRecentCommits,
 );
 
