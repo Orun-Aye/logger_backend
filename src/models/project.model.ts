@@ -59,7 +59,8 @@ export interface IProject extends Document {
 const ProjectSchema: Schema<IProject> = new Schema(
   {
     _id: { type: Schema.Types.ObjectId, auto: true },
-    name: { type: String, required: true, unique: true },
+    // Unique per owner (compound index below), not across every account
+    name: { type: String, required: true },
     apiKey: { type: String, required: true, unique: true },
     description: { type: String },
     ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true }, // Reference to User model
@@ -125,4 +126,28 @@ const ProjectSchema: Schema<IProject> = new Schema(
 // Index for organization-scoped queries (sparse because field is optional)
 ProjectSchema.index({ organizationId: 1 }, { sparse: true });
 
+// One owner cannot have two projects with the same name; different owners can
+ProjectSchema.index({ ownerId: 1, name: 1 }, { unique: true, name: "ownerId_name_unique" });
+
 export const ProjectModel = model<IProject>("Project", ProjectSchema);
+
+/** The global unique index on name that the per-owner index above replaces. */
+const LEGACY_NAME_INDEX = "name_1";
+
+/**
+ * Drops the global unique name index and builds the per-owner one. Safe to run
+ * on every boot: it does nothing once the old index is gone. Needed because
+ * Mongoose never drops an index that left the schema.
+ */
+export async function repairProjectNameIndexes(): Promise<string[]> {
+  const existing = await ProjectModel.collection
+    .indexes()
+    .catch(() => [] as Array<{ name?: string }>);
+  const dropped: string[] = [];
+  if (existing.some((index) => index.name === LEGACY_NAME_INDEX)) {
+    await ProjectModel.collection.dropIndex(LEGACY_NAME_INDEX);
+    dropped.push(LEGACY_NAME_INDEX);
+  }
+  await ProjectModel.createIndexes();
+  return dropped;
+}

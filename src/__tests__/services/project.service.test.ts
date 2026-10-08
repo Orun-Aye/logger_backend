@@ -4,7 +4,7 @@ import {
   ProjectNotFoundError,
   ProjectValidationError,
 } from "../../services/project.service";
-import { ProjectModel } from "../../models/project.model";
+import { ProjectModel, repairProjectNameIndexes } from "../../models/project.model";
 import { createTestUser, createTestProject, createTestLog } from "../factories";
 
 describe("ProjectService", () => {
@@ -68,7 +68,7 @@ describe("ProjectService", () => {
           name: "Unique Name",
           ownerId: userId,
         })
-      ).rejects.toThrow("Project with this name already exists");
+      ).rejects.toThrow("You already have a project with this name");
     });
 
     it("should add the owner as admin team member", async () => {
@@ -391,6 +391,82 @@ describe("ProjectService", () => {
       // updateTeamMemberRole returns { projectId, updatedUser: { userId, role } }
       expect(result.updatedUser.userId).toBe(mid);
       expect(result.updatedUser.role).toBe("admin");
+    });
+  });
+
+  // ----- project names are unique per owner, not across Apperio -----
+  describe("project names", () => {
+    let otherUserId: string;
+
+    beforeEach(async () => {
+      const other = await createTestUser();
+      otherUserId = (other._id as Types.ObjectId).toString();
+    });
+
+    it("lets two different owners use the same name", async () => {
+      await ProjectService.createProject({ name: "Demo Shop", ownerId: userId });
+      const theirs = await ProjectService.createProject({ name: "Demo Shop", ownerId: otherUserId });
+
+      expect(theirs.name).toBe("Demo Shop");
+      expect(await ProjectModel.countDocuments({ name: "Demo Shop" })).toBe(2);
+    });
+
+    it("still refuses a second project with the same name for one owner", async () => {
+      await ProjectService.createProject({ name: "Demo Shop", ownerId: userId });
+
+      await expect(
+        ProjectService.createProject({ name: "Demo Shop", ownerId: userId })
+      ).rejects.toThrow("You already have a project with this name");
+    });
+
+    it("allows renaming to a name only another owner uses", async () => {
+      await ProjectService.createProject({ name: "Storefront", ownerId: otherUserId });
+      const mine = await ProjectService.createProject({ name: "Mine", ownerId: userId });
+
+      const renamed = await ProjectService.updateProject(String(mine.id), { name: "Storefront" });
+      expect(renamed.name).toBe("Storefront");
+    });
+
+    it("refuses renaming to a name the same owner already uses", async () => {
+      await ProjectService.createProject({ name: "Storefront", ownerId: userId });
+      const mine = await ProjectService.createProject({ name: "Mine", ownerId: userId });
+
+      await expect(
+        ProjectService.updateProject(String(mine.id), { name: "Storefront" })
+      ).rejects.toThrow("You already have a project with this name");
+    });
+
+    it("lets an owner duplicate a project under a name someone else uses", async () => {
+      await ProjectService.createProject({ name: "Copy", ownerId: otherUserId });
+      const source = await ProjectService.createProject({ name: "Source", ownerId: userId });
+
+      const copy = await ProjectService.duplicateProject(String(source.id), "Copy", userId);
+      expect(copy.newProjectName).toBe("Copy");
+    });
+
+    it("repairs a database that still has the global unique name index", async () => {
+      await ProjectModel.collection.createIndex({ name: 1 }, { unique: true, name: "name_1" });
+
+      expect(await repairProjectNameIndexes()).toEqual(["name_1"]);
+      const names = (await ProjectModel.collection.indexes()).map((i) => i.name);
+      expect(names).toContain("ownerId_name_unique");
+      expect(names).not.toContain("name_1");
+
+      await ProjectService.createProject({ name: "Shared", ownerId: userId });
+      await ProjectService.createProject({ name: "Shared", ownerId: otherUserId });
+      expect(await ProjectModel.countDocuments({ name: "Shared" })).toBe(2);
+
+      // Safe to run on every boot
+      expect(await repairProjectNameIndexes()).toEqual([]);
+    });
+
+    it("refuses a transfer when the new owner already has a project with that name", async () => {
+      await ProjectService.createProject({ name: "Demo Shop", ownerId: otherUserId });
+      const mine = await ProjectService.createProject({ name: "Demo Shop", ownerId: userId });
+
+      await expect(
+        ProjectService.transferOwnership(String(mine.id), otherUserId, userId)
+      ).rejects.toThrow(/already has a project called "Demo Shop"/);
     });
   });
 });

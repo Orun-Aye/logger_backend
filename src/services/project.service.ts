@@ -37,6 +37,15 @@ export class ProjectValidationError extends Error {
   }
 }
 
+/** Project names are unique per owner, so the message speaks to the owner. */
+const DUPLICATE_NAME_MESSAGE = "You already have a project with this name";
+
+/** The per-owner unique index rejected a name (a race the pre-check missed). */
+const isDuplicateNameError = (error: unknown): boolean =>
+  !!error &&
+  (error as { code?: number }).code === 11000 &&
+  /ownerId_name_unique|name_1/.test(String((error as Error).message));
+
 export class ProjectOperationError extends Error {
   constructor(message: string, context?: any) {
     super(message);
@@ -181,15 +190,14 @@ export class ProjectService {
     try {
       this.validateCreateData(data);
 
-      // Check for duplicate names
+      // Names only need to be unique among this owner's projects
       const existingProject = await ProjectModel.findOne({
+        ownerId: data.ownerId,
         name: data.name.trim(),
       });
 
       if (existingProject) {
-        throw new ProjectValidationError(
-          "Project with this name already exists"
-        );
+        throw new ProjectValidationError(DUPLICATE_NAME_MESSAGE);
       }
 
       const apiKey = uuidv4();
@@ -219,6 +227,9 @@ export class ProjectService {
     } catch (error) {
       if (error instanceof ProjectValidationError) {
         throw error;
+      }
+      if (isDuplicateNameError(error)) {
+        throw new ProjectValidationError(DUPLICATE_NAME_MESSAGE);
       }
       throw new Error(`Failed to create project: ${error}`);
     }
@@ -1440,16 +1451,15 @@ export class ProjectService {
           );
         }
 
-        // Check for duplicate names (excluding current project)
+        // Check for duplicate names among the same owner's other projects
         const duplicateProject = await ProjectModel.findOne({
+          ownerId: existingProject.ownerId,
           name: data.name.trim(),
           _id: { $ne: id },
         });
 
         if (duplicateProject) {
-          throw new ProjectValidationError(
-            "Project with this name already exists"
-          );
+          throw new ProjectValidationError(DUPLICATE_NAME_MESSAGE);
         }
       }
 
@@ -2392,14 +2402,13 @@ export class ProjectService {
         throw new ProjectNotFoundError(sourceProjectId);
       }
 
-      // Check if new name is available
+      // Check if the new name is free among this owner's projects
       const existingProject = await ProjectModel.findOne({
+        ownerId: new Types.ObjectId(ownerId),
         name: newName.trim(),
       });
       if (existingProject) {
-        throw new ProjectValidationError(
-          "Project with this name already exists"
-        );
+        throw new ProjectValidationError(DUPLICATE_NAME_MESSAGE);
       }
 
       const {
@@ -2486,6 +2495,18 @@ export class ProjectService {
       if (project.ownerId?.toString() !== currentOwnerId) {
         throw new ProjectValidationError(
           "Only the current owner can transfer ownership"
+        );
+      }
+
+      // Names are unique per owner, so the new owner must not have one already
+      const nameTaken = await ProjectModel.exists({
+        ownerId: new Types.ObjectId(newOwnerId),
+        name: project.name,
+        _id: { $ne: project._id },
+      });
+      if (nameTaken) {
+        throw new ProjectValidationError(
+          `The new owner already has a project called "${project.name}". Rename one of them first.`
         );
       }
 

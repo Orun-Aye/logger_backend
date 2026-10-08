@@ -70,6 +70,7 @@ import { initializeRedis } from "./utils/db";
 import { initializeJobs } from "./jobs";
 import { ChangelogService } from "./services/changelog.service";
 import { repairDeploymentIndexes } from "./models/deployment.model";
+import { repairProjectNameIndexes } from "./models/project.model";
 
 // Initialize configuration (validates environment variables)
 initializeConfig();
@@ -607,6 +608,18 @@ app.use(errorHandlerMiddleware);
         }
       } catch (error) {
         logger.error("Deployment index repair failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Project names became unique per owner; drop the global unique index
+      try {
+        const dropped = await repairProjectNameIndexes();
+        if (dropped.length > 0) {
+          logger.info("Project name indexes repaired", { dropped });
+        }
+      } catch (error) {
+        logger.error("Project name index repair failed", {
           error: error instanceof Error ? error.message : String(error),
         });
       }
