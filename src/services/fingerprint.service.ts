@@ -57,6 +57,8 @@ export class FingerprintService {
       .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s"']*/g, "<time>")
       // URLs (keep host, drop path/query variance)
       .replace(/(https?:\/\/[^\s/"']+)[^\s"']*/gi, "$1/<path>")
+      // Query strings on relative paths ("/api/items?page=2"): keep the path
+      .replace(/(\/[^\s?"'#]*)\?[^\s"'#]+/g, "$1?<query>")
       // Numbers with 2+ digits (ports, sizes, counts)
       .replace(/\b\d{2,}\b/g, "<n>")
       .trim()
