@@ -170,7 +170,7 @@ export class OAuthService {
           avatarUrl: info.avatarUrl,
           role: "developer",
           betaAccess: true,
-          betaTier: "core",
+          betaTier: "full",
         });
         await user.save();
       }

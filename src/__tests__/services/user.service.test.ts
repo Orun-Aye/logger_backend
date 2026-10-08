@@ -201,6 +201,21 @@ describe("UserService", () => {
 
       expect(result.role).toBe("developer");
     });
+
+    it("should give every new signup the full product", async () => {
+      const result = await UserService.createUser({
+        email: "full-tier@example.com",
+        firstName: "Full",
+        lastName: "Access",
+        password: "SomePass123!",
+        role: "developer",
+        inviteCode,
+      });
+
+      expect(result.betaTier).toBe("full");
+      const stored = await UserModel.findById(result._id).lean();
+      expect(stored?.betaTier).toBe("full");
+    });
   });
 
   // ----- loginUser -----

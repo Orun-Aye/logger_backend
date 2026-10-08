@@ -74,7 +74,9 @@ const UserSchema: Schema<IUser> = new Schema({
 
     // Beta access
     betaAccess: { type: Boolean, default: false },
-    betaTier: { type: String, enum: ["core", "full"], default: "core" },
+    // Every beta account gets the whole product; "core" is kept only so old
+    // documents still validate.
+    betaTier: { type: String, enum: ["core", "full"], default: "full" },
     inviteCode: { type: String },
 
     githubConnection: {

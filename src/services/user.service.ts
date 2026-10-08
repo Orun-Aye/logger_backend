@@ -100,7 +100,7 @@ export class UserService {
         password: hashedPassword,
         role: data.role || "developer",
         betaAccess: true,
-        betaTier: "core",
+        betaTier: "full",
         inviteCode: data.inviteCode,
       });
       const savedUser = await newUser.save();

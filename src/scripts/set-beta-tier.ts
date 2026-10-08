@@ -1,9 +1,9 @@
 /**
  * Grants or revokes the "full" beta tier for a user.
  *
- * betaTier gates advanced dashboard routes (see remote-logger/lib/route-tiers.ts
- * and components/shared/UpgradeGate.tsx). It defaults to "core" at signup and has
- * no admin endpoint, so this script is the supported way to change it.
+ * Since 2026-10-08 betaTier gates nothing: the dashboard shows every feature to
+ * every account and new signups default to "full". The field and this script
+ * remain so the value can still be inspected or set if tiers ever return.
  *
  * Usage:
  *   npx ts-node src/scripts/set-beta-tier.ts                      # list users (read-only)
